@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { upsertStoredVoice } from '@/lib/voice-store';
 
 export async function POST(req: NextRequest) {
   try {
@@ -65,6 +66,13 @@ export async function POST(req: NextRequest) {
 
     const ttsData = await ttsRes.json();
     console.log('Activation TTS Response:', JSON.stringify(ttsData));
+
+    await upsertStoredVoice({
+      voice_id: finalVoiceId,
+      voice_name,
+      gender: gender ?? null,
+      description: description ?? null,
+    });
 
     return NextResponse.json({ 
       status_code: 0, 

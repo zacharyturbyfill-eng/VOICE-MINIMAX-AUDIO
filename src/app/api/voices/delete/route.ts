@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { deleteStoredVoice } from '@/lib/voice-store';
 
 export async function POST(req: NextRequest) {
   try {
@@ -42,6 +43,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (data.base_resp?.status_code === 0 || data.base_resp?.status_msg?.includes('not exist')) {
+      await deleteStoredVoice(voice_id);
       return NextResponse.json({ success: true });
     } else {
       return NextResponse.json({ error: data.base_resp?.status_msg || 'Delete failed' }, { status: 500 });

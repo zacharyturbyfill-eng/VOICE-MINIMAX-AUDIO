@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { listStoredVoices } from '@/lib/voice-store';
 
 type VoiceItem = {
   voice_id: string;
@@ -44,6 +45,16 @@ export async function POST(req: NextRequest) {
         if (data.voice_cloning) clonedVoices.push(...data.voice_cloning);
         if (data.voice_generation) clonedVoices.push(...data.voice_generation);
       }
+    });
+
+    const storedVoices = await listStoredVoices();
+    storedVoices.forEach((v) => {
+      clonedVoices.push({
+        voice_id: v.voice_id,
+        voice_name: v.voice_name,
+        gender: v.gender ?? undefined,
+        description: v.description ?? undefined,
+      });
     });
 
     // Final deduplication by voice_id
