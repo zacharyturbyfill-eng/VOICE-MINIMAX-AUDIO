@@ -1,7 +1,10 @@
-const API_KEY = 'sk-api-QtsTwq97qZdH1EsDNn2I7X6F7AimJa6LsU-lMeIAv9c6H3gJZQYA3wHG9hSd2QSGL-192NI1RoZz0-111jrmtG5UrOo2dqi1XoRyNh2OLi1_5V_2KZaYxEY';
-const GROUP_ID = '2025813060312117262';
+const API_KEY = process.env.MINIMAX_API_KEY;
+const GROUP_ID = process.env.MINIMAX_GROUP_ID;
 
 async function debugVoices() {
+    if (!API_KEY || !GROUP_ID) {
+        throw new Error('Missing MINIMAX_API_KEY or MINIMAX_GROUP_ID environment variables');
+    }
     console.log('--- Debugging Voices API ---');
     console.log('URL: https://api.minimax.io/v1/get_voice?GroupId=' + GROUP_ID);
     

@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'speech-2.8-hd',
+        model: 'speech-2.8-turbo',
         text: `Giọng của ${voice_name} đã được kích hoạt thành công.`,
         voice_setting: { voice_id: finalVoiceId, speed: 1, vol: 1, pitch: 0 },
         audio_setting: { format: 'mp3' }

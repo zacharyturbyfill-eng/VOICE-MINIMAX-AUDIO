@@ -245,7 +245,7 @@ export default function Dashboard() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model: 'speech-2.8-hd',
+            model: 'speech-2.8-turbo',
             text: line.text,
             voice_setting: { voice_id: voiceId, speed: speed, vol: 1, pitch: 0, emotion: selectedEmotion },
             audio_setting: { format: 'mp3' }
@@ -301,7 +301,7 @@ export default function Dashboard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'speech-2.8-hd',
+          model: 'speech-2.8-turbo',
           text: 'Hello, this is a voice preview.',
           voice_setting: {
             voice_id: voiceId,

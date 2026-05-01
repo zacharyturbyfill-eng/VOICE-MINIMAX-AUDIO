@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'speech-2.8-hd',
+        model: 'speech-2.8-turbo',
         text: previewText,
         voice_setting: {
           voice_id: tempVoiceId,

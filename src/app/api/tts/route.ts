@@ -10,13 +10,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'API Key not configured' }, { status: 500 });
     }
 
+    const payload = {
+      ...body,
+      model: 'speech-2.8-turbo',
+    };
+
     const response = await fetch(`https://api.minimax.io/v1/t2a_v2?GroupId=${groupId}`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
     });
 
     const result = await response.json();
