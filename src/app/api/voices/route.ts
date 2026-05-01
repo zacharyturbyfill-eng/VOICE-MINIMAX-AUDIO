@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+type VoiceItem = {
+  voice_id: string;
+  [key: string]: unknown;
+};
+
 export async function POST(req: NextRequest) {
   try {
     const apiKey = process.env.MINIMAX_API_KEY;
@@ -26,8 +31,8 @@ export async function POST(req: NextRequest) {
       )
     );
 
-    let systemVoices = [];
-    let clonedVoices = [];
+    const systemVoices: VoiceItem[] = [];
+    const clonedVoices: VoiceItem[] = [];
 
     results.forEach((result, index) => {
       if (result.status === 'fulfilled') {
@@ -42,8 +47,8 @@ export async function POST(req: NextRequest) {
     });
 
     // Final deduplication by voice_id
-    const uniqueSystem = Array.from(new Map(systemVoices.map(v => [v.voice_id, v])).values());
-    const uniqueCloned = Array.from(new Map(clonedVoices.map(v => [v.voice_id, v])).values());
+    const uniqueSystem = Array.from(new Map(systemVoices.map((v) => [v.voice_id, v])).values());
+    const uniqueCloned = Array.from(new Map(clonedVoices.map((v) => [v.voice_id, v])).values());
 
     return NextResponse.json({
       system_voice: uniqueSystem,
