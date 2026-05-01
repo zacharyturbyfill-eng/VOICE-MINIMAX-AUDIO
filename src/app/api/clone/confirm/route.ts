@@ -8,6 +8,7 @@ export async function POST(req: NextRequest) {
     const voice_name = (formData.get('voice_name') as string | null)?.trim();
     const gender = formData.get('gender') as string | null;
     const description = formData.get('description') as string | null;
+    const languageBoost = (formData.get('language_boost') as string | null)?.trim() || 'Vietnamese';
     const apiKey = process.env.MINIMAX_API_KEY;
     const groupId = process.env.MINIMAX_GROUP_ID;
 
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         voice_id: finalVoiceId,
         file_id: fileId,
-        language_boost: 'Vietnamese'
+        language_boost: languageBoost
       })
     });
 
@@ -82,6 +83,7 @@ export async function POST(req: NextRequest) {
     await upsertStoredVoice({
       voice_id: finalVoiceId,
       voice_name,
+      file_id: String(fileId),
       gender: gender ?? null,
       description: description ?? null,
     });

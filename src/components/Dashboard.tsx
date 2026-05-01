@@ -80,6 +80,7 @@ export default function Dashboard() {
   // Registration Form
   const [voiceName, setVoiceName] = useState('');
   const [voiceGender, setVoiceGender] = useState('male');
+  const [voiceLanguageBoost, setVoiceLanguageBoost] = useState('Vietnamese');
   const [voiceDesc, setVoiceDesc] = useState('');
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [quotaInfo, setQuotaInfo] = useState<any>(null);
@@ -349,11 +350,12 @@ export default function Dashboard() {
         body: (() => {
           const formData = new FormData();
           formData.append('file', cloningFile);
-          formData.append('voice_name', voiceName);
-          formData.append('gender', voiceGender);
-          formData.append('description', voiceDesc);
-          return formData;
-        })()
+            formData.append('voice_name', voiceName);
+            formData.append('gender', voiceGender);
+            formData.append('language_boost', voiceLanguageBoost);
+            formData.append('description', voiceDesc);
+            return formData;
+          })()
       });
       const data = await res.json();
       
@@ -1040,13 +1042,29 @@ export default function Dashboard() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-6">
+                  <div className="grid grid-cols-3 gap-6">
                     <div className="space-y-3">
                       <label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Label</label>
                       <select className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white font-bold outline-none">
                         <option>Vietnamese</option>
                         <option>English</option>
                         <option>Chinese</option>
+                      </select>
+                    </div>
+                    <div className="space-y-3">
+                      <label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Language Boost</label>
+                      <select
+                        value={voiceLanguageBoost}
+                        onChange={(e) => setVoiceLanguageBoost(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white font-bold outline-none"
+                      >
+                        <option value="Vietnamese">Vietnamese</option>
+                        <option value="English">English</option>
+                        <option value="Chinese">Chinese</option>
+                        <option value="Japanese">Japanese</option>
+                        <option value="Korean">Korean</option>
+                        <option value="Thai">Thai</option>
+                        <option value="auto">Auto</option>
                       </select>
                     </div>
                     <div className="space-y-3">

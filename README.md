@@ -19,6 +19,7 @@ Run this SQL in Supabase SQL Editor:
 create table if not exists public.stored_voices (
   voice_id text primary key,
   voice_name text not null,
+  file_id text null,
   gender text null,
   description text null,
   created_at timestamptz not null default now()
@@ -27,6 +28,7 @@ create table if not exists public.stored_voices (
 
 ## Behavior
 
-- When clone confirm succeeds, app stores `voice_id` + `voice_name` (+ optional metadata) into `stored_voices`.
+- When clone confirm succeeds, app stores `voice_id`, `file_id`, `voice_name` (+ optional metadata) into `stored_voices`.
 - `/api/voices` merges MiniMax voices with `stored_voices`, so saved character names still appear after changing API key/group.
 - Deleting a voice also removes its record from `stored_voices`.
+- `language_boost` is selectable in the registration modal and sent to MiniMax `voice_clone`.

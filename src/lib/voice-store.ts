@@ -1,6 +1,7 @@
 type StoredVoice = {
   voice_id: string;
   voice_name: string;
+  file_id?: string | null;
   gender?: string | null;
   description?: string | null;
   created_at?: string;
@@ -37,7 +38,7 @@ export async function listStoredVoices(): Promise<StoredVoice[]> {
   if (!config) return [];
 
   const res = await fetch(
-    `${config.url}/rest/v1/stored_voices?select=voice_id,voice_name,gender,description,created_at&order=created_at.desc`,
+    `${config.url}/rest/v1/stored_voices?select=voice_id,voice_name,file_id,gender,description,created_at&order=created_at.desc`,
     {
       method: 'GET',
       headers: {

@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
       clonedVoices.push({
         voice_id: v.voice_id,
         voice_name: v.voice_name,
+        file_id: v.file_id ?? undefined,
         gender: v.gender ?? undefined,
         description: v.description ?? undefined,
       });
