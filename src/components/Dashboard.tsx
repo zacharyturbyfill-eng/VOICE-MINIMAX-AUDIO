@@ -72,12 +72,10 @@ export default function Dashboard() {
   const [showVoiceLibrary, setShowVoiceLibrary] = useState(false);
 
   // Cloning State
-  const [cloneStep, setCloneStep] = useState(1); // 1: Upload, 2: Preview, 3: Register
+  const [cloneStep, setCloneStep] = useState(1); // 1: Upload + Register
   const [cloningFile, setCloningFile] = useState<File | null>(null);
   const [previewText, setPreviewText] = useState('Xin chào, tôi là một giọng nói nhân tạo được tạo ra bởi MiniMax AI. Rất vui được đồng hành cùng bạn.');
   const [isCloning, setIsCloning] = useState(false);
-  const [previewAudioUrl, setPreviewAudioUrl] = useState<string | null>(null);
-  const [tempFileId, setTempFileId] = useState<string | null>(null);
   
   // Registration Form
   const [voiceName, setVoiceName] = useState('');
@@ -332,46 +330,15 @@ export default function Dashboard() {
   };
 
   const handleInitialGenerateClone = async () => {
-    if (!cloningFile || !previewText.trim()) {
-      alert('Please upload a file and provide preview text.');
+    if (!cloningFile) {
+      alert('Please upload a file.');
       return;
     }
-    setIsCloning(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', cloningFile);
-      formData.append('text', previewText);
-
-      const res = await fetch('/api/clone/generate', {
-        method: 'POST',
-        body: formData
-      });
-      const data = await res.json();
-      
-      if (data.audio) {
-        const hex = data.audio;
-        const bytes = new Uint8Array(hex.match(/.{1,2}/g).map((byte: string) => parseInt(byte, 16)));
-        const blob = new Blob([bytes], { type: 'audio/mpeg' });
-        const url = URL.createObjectURL(blob);
-        setPreviewAudioUrl(url);
-        setTempFileId(data.file_id);
-        setCloneStep(2);
-      } else {
-        throw new Error(data.error || 'Preview generation failed');
-      }
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setIsCloning(false);
-    }
-  };
-
-  const handleConfirmClone = () => {
     setShowRegisterModal(true);
   };
 
   const handleSaveVoice = async () => {
-    if (!voiceName.trim()) {
+    if (!voiceName.trim() || !cloningFile) {
       alert('Please provide a voice name.');
       return;
     }
@@ -379,13 +346,14 @@ export default function Dashboard() {
     try {
       const res = await fetch('/api/clone/confirm', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          file_id: tempFileId,
-          voice_name: voiceName,
-          gender: voiceGender,
-          description: voiceDesc
-        })
+        body: (() => {
+          const formData = new FormData();
+          formData.append('file', cloningFile);
+          formData.append('voice_name', voiceName);
+          formData.append('gender', voiceGender);
+          formData.append('description', voiceDesc);
+          return formData;
+        })()
       });
       const data = await res.json();
       
@@ -404,7 +372,6 @@ export default function Dashboard() {
         setShowRegisterModal(false);
         setCloneStep(1);
         setCloningFile(null);
-        setPreviewAudioUrl(null);
         fetchVoices();
         setActiveTab('editor');
       } else {
@@ -978,42 +945,9 @@ export default function Dashboard() {
                           disabled={isCloning || !cloningFile}
                           className="w-full py-6 rounded-[2rem] bg-primary text-white font-black uppercase tracking-[0.2em] shadow-2xl shadow-primary/40 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
                         >
-                          {isCloning ? "Processing..." : "Generate Preview"}
+                          {isCloning ? "Processing..." : "Create Voice"}
                         </button>
                       </div>
-
-                      {/* Step 2: Preview & Confirm */}
-                      {cloneStep >= 2 && (
-                        <motion.div 
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className={cn("space-y-6 transition-opacity", cloneStep !== 2 && "opacity-40 pointer-events-none")}
-                        >
-                          <div className="flex items-center gap-4">
-                             <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white font-black text-sm">2</div>
-                             <h3 className="text-xl font-bold text-white">Generated Voice Result</h3>
-                          </div>
-                          
-                          <div className="bg-black/40 border border-white/10 rounded-3xl p-6 flex items-center gap-6">
-                            <button 
-                              onClick={() => previewAudioUrl && new Audio(previewAudioUrl).play()}
-                              className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-white shadow-xl shadow-primary/20 hover:scale-110 active:scale-95 transition-all"
-                            >
-                              <Play className="w-8 h-8 fill-current" />
-                            </button>
-                            <div className="flex-1">
-                              <p className="font-bold text-white">Voice Clone Preview</p>
-                              <p className="text-xs text-muted-foreground uppercase tracking-widest font-bold mt-1">Ready for confirmation</p>
-                            </div>
-                            <button 
-                              onClick={handleConfirmClone}
-                              className="px-10 py-4 rounded-2xl bg-white text-black font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all"
-                            >
-                              Confirm
-                            </button>
-                          </div>
-                        </motion.div>
-                      )}
                     </div>
                   </div>
 
