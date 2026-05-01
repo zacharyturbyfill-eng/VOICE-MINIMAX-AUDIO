@@ -271,9 +271,10 @@ export default function Dashboard() {
         totalUsage += result.usage || 0;
         setActiveLineIndex(i);
         
-        if (result.audio && isSequencePlaying) {
+        const audioUrl = result.audio ?? undefined;
+        if (audioUrl && isSequencePlaying) {
           await new Promise((resolve) => {
-            const audio = new Audio(result.audio);
+            const audio = new Audio(audioUrl);
             sequenceAudioRef.current = audio;
             audio.onended = resolve;
             audio.onerror = resolve;
