@@ -9,8 +9,8 @@ export async function POST(req: NextRequest) {
     const gender = formData.get('gender') as string | null;
     const description = formData.get('description') as string | null;
     const languageBoost = (formData.get('language_boost') as string | null)?.trim() || 'Vietnamese';
-    const apiKey = process.env.MINIMAX_API_KEY;
-    const groupId = process.env.MINIMAX_GROUP_ID;
+    const apiKey = process.env.MINIMAX_API_KEY?.trim();
+    const groupId = process.env.MINIMAX_GROUP_ID?.trim();
 
     if (!apiKey || !groupId || !file || !voice_name) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -46,7 +46,10 @@ export async function POST(req: NextRequest) {
     const uploadData = await uploadRes.json();
     if (uploadData.base_resp?.status_code !== 0) {
       return NextResponse.json(
-        { error: uploadData.base_resp?.status_msg || 'Upload failed' },
+        {
+          error: uploadData.base_resp?.status_msg || 'Upload failed',
+          status_code: uploadData.base_resp?.status_code,
+        },
         { status: 500 }
       );
     }
@@ -74,10 +77,13 @@ export async function POST(req: NextRequest) {
     console.log('Clone Response:', JSON.stringify(cloneData));
 
     if (cloneData.base_resp?.status_code !== 0) {
-       return NextResponse.json({ 
-         error: cloneData.base_resp?.status_msg || 'Cloning failed at MiniMax side',
-         status_code: cloneData.base_resp?.status_code 
-       }, { status: 500 });
+      return NextResponse.json(
+        {
+          error: cloneData.base_resp?.status_msg || 'Cloning failed at MiniMax side',
+          status_code: cloneData.base_resp?.status_code,
+        },
+        { status: 500 }
+      );
     }
     
     await upsertStoredVoice({

@@ -359,7 +359,7 @@ export default function Dashboard() {
       });
       const data = await res.json();
       
-      if (data.status_code === 0) {
+        if (data.status_code === 0) {
         // Save to local storage to handle API delay
         const localVoices = JSON.parse(localStorage.getItem('minimax_local_voices') || '[]');
         localVoices.push({
@@ -376,10 +376,10 @@ export default function Dashboard() {
         setCloningFile(null);
         fetchVoices();
         setActiveTab('editor');
-      } else {
-        throw new Error(data.status_msg || 'Saving failed');
-      }
-    } catch (err: any) {
+        } else {
+          throw new Error(data.error || data.status_msg || `Saving failed${data.status_code ? ` (code: ${data.status_code})` : ''}`);
+        }
+      } catch (err: any) {
       alert(err.message);
     } finally {
       setIsCloning(false);
