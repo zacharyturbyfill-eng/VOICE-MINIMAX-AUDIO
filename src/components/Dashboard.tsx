@@ -1121,7 +1121,11 @@ export default function Dashboard() {
                           <input 
                             type="file" 
                             ref={fileInputRef}
-                            onChange={(e) => setCloningFile(e.target.files?.[0] || null)}
+                            onChange={(e) => {
+                              setCloningFile(e.target.files?.[0] || null);
+                              setCloneStep(1);
+                              setPreviewAudioUrl(null);
+                            }}
                             className="hidden" 
                             accept="audio/*"
                           />
@@ -1168,6 +1172,51 @@ export default function Dashboard() {
                           {isCloning ? "Processing..." : "Create Voice"}
                         </button>
                       </div>
+
+                      {/* Step 2: Preview & Confirm */}
+                      {cloneStep === 2 && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="mt-12 p-8 bg-primary/5 border border-primary/20 rounded-[3rem] space-y-8"
+                        >
+                          <div className="flex items-center gap-4">
+                             <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white font-black text-sm">2</div>
+                             <h3 className="text-xl font-bold text-white">Preview & Save</h3>
+                          </div>
+
+                          {previewAudioUrl && (
+                            <div className="flex items-center gap-6 bg-black/40 p-6 rounded-[2rem] border border-white/5">
+                               <button 
+                                 onClick={() => new Audio(previewAudioUrl).play()}
+                                 className="w-14 h-14 rounded-full bg-primary flex items-center justify-center text-white shadow-lg"
+                               >
+                                 <Play className="w-6 h-6 fill-current ml-1" />
+                               </button>
+                               <div className="flex-1">
+                                  <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Preview Generated</p>
+                                  <p className="text-sm font-medium text-white/70">Listen to how your cloned voice sounds.</p>
+                               </div>
+                            </div>
+                          )}
+
+                          <div className="flex gap-4">
+                            <button 
+                              onClick={() => setCloneStep(1)}
+                              className="flex-1 py-5 rounded-2xl bg-white/5 text-white font-black uppercase tracking-widest hover:bg-white/10 transition-all border border-white/10"
+                            >
+                              Try Again
+                            </button>
+                            <button 
+                              onClick={handleConfirmClone}
+                              className="flex-[2] py-5 rounded-2xl bg-gradient-to-r from-primary to-blue-600 text-white font-black uppercase tracking-widest shadow-xl shadow-primary/30 hover:scale-105 active:scale-95 transition-all"
+                            >
+                              Confirm & Register
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+
                     </div>
                   </div>
 

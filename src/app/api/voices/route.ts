@@ -10,34 +10,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'API Key or Group ID not configured' }, { status: 400 });
     }
 
-    const types = ['system', 'voice_cloning', 'voice_generation'];
-    const results = await Promise.allSettled(
-      types.map(type =>
-        fetch(`https://api.minimax.io/v1/get_voice`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'x-group-id': groupId,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ voice_type: type }),
-        }).then(res => res.json())
-      )
-    );
-
-    const systemVoices: any[] = [];
-    const clonedVoices: any[] = [];
-
-    results.forEach((result) => {
-      if (result.status !== 'fulfilled') return;
-      const data = result.value;
-      if (data.system_voice) systemVoices.push(...data.system_voice);
-      if (data.voice_cloning) clonedVoices.push(...data.voice_cloning);
-      if (data.voice_generation) clonedVoices.push(...data.voice_generation);
+    const response = await fetch(`https://api.minimax.io/v1/get_voice`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'x-group-id': groupId,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ voice_type: 'all' }),
     });
 
-    const uniqueSystem = Array.from(new Map(systemVoices.map(v => [v.voice_id, v])).values());
-    const uniqueCloned = Array.from(new Map(clonedVoices.map(v => [v.voice_id, v])).values());
+    const data = await response.json();
+    
+    const systemVoices = data.system_voice || [];
+    const clonedVoices = [
+      ...(data.voice_cloning || []),
+      ...(data.voice_generation || []),
+      ...(data.cloned_voice || [])
+    ];
+
+    const uniqueSystem = Array.from(new Map(systemVoices.map((v: any) => [v.voice_id, v])).values());
+    const uniqueCloned = Array.from(new Map(clonedVoices.map((v: any) => [v.voice_id, v])).values());
 
     return NextResponse.json({
       system_voice: uniqueSystem,
