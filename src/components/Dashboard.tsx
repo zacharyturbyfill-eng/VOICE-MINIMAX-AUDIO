@@ -61,6 +61,35 @@ type MiniMaxCredential = {
   createdAt?: string;
 };
 
+const isHexAudio = (value: string) => /^[0-9a-fA-F]+$/.test(value) && value.length % 2 === 0;
+
+const toAudioUrl = (audioPayload: unknown): string | null => {
+  if (typeof audioPayload !== 'string' || !audioPayload.trim()) return null;
+  const raw = audioPayload.trim();
+
+  // MiniMax may return a direct URL in some responses.
+  if (raw.startsWith('http://') || raw.startsWith('https://')) {
+    return raw;
+  }
+
+  try {
+    if (isHexAudio(raw)) {
+      const pairs = raw.match(/.{1,2}/g);
+      if (!pairs) return null;
+      const bytes = new Uint8Array(pairs.map((byte) => parseInt(byte, 16)));
+      return URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
+    }
+
+    // Fallback: treat as base64 audio string.
+    const binary = atob(raw);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
+  } catch {
+    return null;
+  }
+};
+
 export default function Dashboard() {
   const [script, setScript] = useState('Speaker A: Hello, this is a test of the MiniMax direct API.\nSpeaker B: It sounds amazing! (laughs)');
   const [selectedVoice, setSelectedVoice] = useState<string>('');
@@ -81,16 +110,17 @@ export default function Dashboard() {
   const [showVoiceLibrary, setShowVoiceLibrary] = useState(false);
 
   // Cloning State
-  const [cloneStep, setCloneStep] = useState(1); // 1: Upload, 2: Preview, 3: Register
+  const [cloneStep, setCloneStep] = useState(1); // 1: Upload + Register
   const [cloningFile, setCloningFile] = useState<File | null>(null);
   const [previewText, setPreviewText] = useState('Xin chào, tôi là một giọng nói nhân tạo được tạo ra bởi MiniMax AI. Rất vui được đồng hành cùng bạn.');
-  const [isCloning, setIsCloning] = useState(false);
   const [previewAudioUrl, setPreviewAudioUrl] = useState<string | null>(null);
-  const [tempFileId, setTempFileId] = useState<string | null>(null);
+  const [tempFileId, setTempFileId] = useState('');
+  const [isCloning, setIsCloning] = useState(false);
   
   // Registration Form
   const [voiceName, setVoiceName] = useState('');
   const [voiceGender, setVoiceGender] = useState('male');
+  const [voiceLanguageBoost, setVoiceLanguageBoost] = useState('Vietnamese');
   const [voiceDesc, setVoiceDesc] = useState('');
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [quotaInfo, setQuotaInfo] = useState<any>(null);
@@ -118,12 +148,22 @@ export default function Dashboard() {
 
   const handleMergePreview = async () => {
     if (generatedChunks.length === 0) return;
+    const chunksWithAudio = generatedChunks.filter((c) => typeof c.audio === 'string' && c.audio.length > 0);
+    if (chunksWithAudio.length === 0) {
+      alert('No audio chunks to merge. Please check API response/error.');
+      return;
+    }
+
     const blobs = await Promise.all(
-      generatedChunks.filter(c => c.audio).map(async (c) => {
+      chunksWithAudio.map(async (c) => {
         const res = await fetch(c.audio);
         return await res.blob();
       })
     );
+    if (blobs.length === 0) {
+      alert('No audio blobs available for merge.');
+      return;
+    }
     const mergedBlob = new Blob(blobs, { type: 'audio/mpeg' });
     setMergedAudioUrl(URL.createObjectURL(mergedBlob));
   };
@@ -331,7 +371,6 @@ export default function Dashboard() {
       setGeneratedChunks(lines.map((l, i) => ({ ...l, id: i, status: 'generating' })));
 
       const results = await Promise.all(lines.map(async (line, index) => {
-        // ... API fetch logic remains same
         const voiceId = roleMap[line.speaker] || selectedVoice;
         const res = await fetch('/api/tts', {
           method: 'POST',
@@ -344,11 +383,13 @@ export default function Dashboard() {
           })
         });
         const data = await res.json();
-        const hex = data.data?.audio;
-        let url = null;
-        if (hex) {
-          const bytes = new Uint8Array(hex.match(/.{1,2}/g).map((byte: string) => parseInt(byte, 16)));
-          url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
+        if (data.base_resp?.status_code !== 0) {
+          const statusMsg = data.base_resp?.status_msg || data.error || 'TTS failed';
+          throw new Error(`Line ${index + 1}: ${statusMsg}`);
+        }
+        const url = toAudioUrl(data.data?.audio);
+        if (!url) {
+          throw new Error(`Line ${index + 1}: API returned empty/invalid audio payload`);
         }
         const result = { id: index, speaker: line.speaker, text: line.text, audio: url, usage: data.extra_info?.usage_characters, status: 'ready' as const };
         setGeneratedChunks(prev => prev.map(c => c.id === index ? result : c));
@@ -363,9 +404,10 @@ export default function Dashboard() {
         totalUsage += result.usage || 0;
         setActiveLineIndex(i);
         
-        if (result.audio && isSequencePlaying) {
+        const audioUrl = result.audio ?? undefined;
+        if (audioUrl && isSequencePlaying) {
           await new Promise((resolve) => {
-            const audio = new Audio(result.audio);
+            const audio = new Audio(audioUrl);
             sequenceAudioRef.current = audio;
             audio.onended = resolve;
             audio.onerror = resolve;
@@ -409,13 +451,12 @@ export default function Dashboard() {
         alert(`Synthesis failed: ${data.base_resp?.status_msg || 'Unknown error'}`);
         return;
       }
-      if (data.data?.audio) {
-        const hex = data.data.audio;
-        const bytes = new Uint8Array(hex.match(/.{1,2}/g).map((byte: string) => parseInt(byte, 16)));
-        const blob = new Blob([bytes], { type: 'audio/mpeg' });
-        const url = URL.createObjectURL(blob);
+      const url = toAudioUrl(data.data?.audio);
+      if (url) {
         const audio = new Audio(url);
         audio.play();
+      } else {
+        alert('Preview audio payload is empty or invalid.');
       }
     } catch (err) {
       console.error('Preview failed', err);
@@ -423,8 +464,8 @@ export default function Dashboard() {
   };
 
   const handleInitialGenerateClone = async () => {
-    if (!cloningFile || !previewText.trim()) {
-      alert('Please upload a file and provide preview text.');
+    if (!cloningFile) {
+      alert('Please upload a file.');
       return;
     }
     setIsCloning(true);
@@ -463,7 +504,7 @@ export default function Dashboard() {
   };
 
   const handleSaveVoice = async () => {
-    if (!voiceName.trim()) {
+    if (!voiceName.trim() || !cloningFile) {
       alert('Please provide a voice name.');
       return;
     }
@@ -496,11 +537,10 @@ export default function Dashboard() {
         setShowRegisterModal(false);
         setCloneStep(1);
         setCloningFile(null);
-        setPreviewAudioUrl(null);
         fetchVoices();
         setActiveTab('editor');
       } else {
-        throw new Error(data.status_msg || 'Saving failed');
+        throw new Error(data.error || data.status_msg || `Saving failed${data.status_code ? ` (code: ${data.status_code})` : ''}`);
       }
     } catch (err: any) {
       alert(err.message);
@@ -1070,7 +1110,7 @@ export default function Dashboard() {
                     </div>
 
                     <div className="space-y-12">
-                      {/* Step 1: Upload */}
+                       {/* Step 1: Upload */}
                       <div className={cn("space-y-6 transition-opacity", cloneStep !== 1 && "opacity-40 pointer-events-none")}>
                         <div className="flex items-center gap-4">
                            <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white font-black text-sm">1</div>
@@ -1125,42 +1165,9 @@ export default function Dashboard() {
                           disabled={isCloning || !cloningFile}
                           className="w-full py-6 rounded-[2rem] bg-primary text-white font-black uppercase tracking-[0.2em] shadow-2xl shadow-primary/40 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
                         >
-                          {isCloning ? "Processing..." : "Generate Preview"}
+                          {isCloning ? "Processing..." : "Create Voice"}
                         </button>
                       </div>
-
-                      {/* Step 2: Preview & Confirm */}
-                      {cloneStep >= 2 && (
-                        <motion.div 
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className={cn("space-y-6 transition-opacity", cloneStep !== 2 && "opacity-40 pointer-events-none")}
-                        >
-                          <div className="flex items-center gap-4">
-                             <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white font-black text-sm">2</div>
-                             <h3 className="text-xl font-bold text-white">Generated Voice Result</h3>
-                          </div>
-                          
-                          <div className="bg-black/40 border border-white/10 rounded-3xl p-6 flex items-center gap-6">
-                            <button 
-                              onClick={() => previewAudioUrl && new Audio(previewAudioUrl).play()}
-                              className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-white shadow-xl shadow-primary/20 hover:scale-110 active:scale-95 transition-all"
-                            >
-                              <Play className="w-8 h-8 fill-current" />
-                            </button>
-                            <div className="flex-1">
-                              <p className="font-bold text-white">Voice Clone Preview</p>
-                              <p className="text-xs text-muted-foreground uppercase tracking-widest font-bold mt-1">Ready for confirmation</p>
-                            </div>
-                            <button 
-                              onClick={handleConfirmClone}
-                              className="px-10 py-4 rounded-2xl bg-white text-black font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all"
-                            >
-                              Confirm
-                            </button>
-                          </div>
-                        </motion.div>
-                      )}
                     </div>
                   </div>
 
@@ -1253,13 +1260,29 @@ export default function Dashboard() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-6">
+                  <div className="grid grid-cols-3 gap-6">
                     <div className="space-y-3">
                       <label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Label</label>
                       <select className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white font-bold outline-none">
                         <option>Vietnamese</option>
                         <option>English</option>
                         <option>Chinese</option>
+                      </select>
+                    </div>
+                    <div className="space-y-3">
+                      <label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Language Boost</label>
+                      <select
+                        value={voiceLanguageBoost}
+                        onChange={(e) => setVoiceLanguageBoost(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white font-bold outline-none"
+                      >
+                        <option value="Vietnamese">Vietnamese</option>
+                        <option value="English">English</option>
+                        <option value="Chinese">Chinese</option>
+                        <option value="Japanese">Japanese</option>
+                        <option value="Korean">Korean</option>
+                        <option value="Thai">Thai</option>
+                        <option value="auto">Auto</option>
                       </select>
                     </div>
                     <div className="space-y-3">

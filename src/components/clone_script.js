@@ -1,11 +1,14 @@
-const API_KEY = 'sk-api-wBs-LmyUjsO0widPVK1DrCJlXCF8vViVv8iz9gDm-ZzYXaSN1_qJxQfPC5NsquXdIAuaMK2IhzUh8tB0AuREk2PsVyfZj1Gl-wl-XBnFxr66FnkfvAuEoqc';
-const GROUP_ID = '2025813060312117262';
+const API_KEY = process.env.MINIMAX_API_KEY;
+const GROUP_ID = process.env.MINIMAX_GROUP_ID;
 const FILE_ID = 393440795537646; // The numeric ID from Step 1
 const VOICE_NAME = 'Bác Sĩ Phúc';
 const VOICE_ID = 'bac_si_phuc_custom'; // Unique identifier
 
 async function cloneVoice() {
     try {
+        if (!API_KEY || !GROUP_ID) {
+            throw new Error('Missing MINIMAX_API_KEY or MINIMAX_GROUP_ID environment variables');
+        }
         console.log('\n--- Step 2: Creating Cloned Voice (Using /v1/voice_clone) ---');
         const cloneRes = await fetch(`https://api.minimax.io/v1/voice_clone?GroupId=${GROUP_ID}`, {
             method: 'POST',

@@ -1,36 +1,34 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+## Environment Variables
 
-## Getting Started
+Set these in Vercel Project Settings > Environment Variables:
 
-First, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```env
+MINIMAX_API_KEY=...
+MINIMAX_GROUP_ID=...
+SUPABASE_URL=https://<your-project-ref>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=...
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`SUPABASE_SERVICE_ROLE_KEY` must be server-only. Do not expose it with `NEXT_PUBLIC_`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Supabase Table Setup
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Run this SQL in Supabase SQL Editor:
 
-## Learn More
+```sql
+create table if not exists public.stored_voices (
+  voice_id text primary key,
+  voice_name text not null,
+  file_id text null,
+  gender text null,
+  description text null,
+  created_at timestamptz not null default now()
+);
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Behavior
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- When clone confirm succeeds, app stores `voice_id`, `file_id`, `voice_name` (+ optional metadata) into `stored_voices`.
+- `/api/voices` merges MiniMax voices with `stored_voices`, so saved character names still appear after changing API key/group.
+- Deleting a voice also removes its record from `stored_voices`.
+- `language_boost` is selectable in the registration modal and sent to MiniMax `voice_clone`.

@@ -19,9 +19,13 @@ export async function POST(req: NextRequest) {
     const payload = { ...body };
     delete payload.apiKey;
     delete payload.groupId;
+    
+    // Default model if not provided
+    if (!payload.model) payload.model = 'speech-2.8-turbo';
+
     if (!ALLOWED_MODELS.has(payload.model)) {
       return NextResponse.json(
-        { error: 'Unsupported model. Allowed: speech-2.8-turbo, speech-2.6-turbo, speech-02-turbo' },
+        { error: `Unsupported model: ${payload.model}. Allowed: speech-2.8-turbo, speech-2.6-turbo, speech-02-turbo` },
         { status: 400 }
       );
     }
