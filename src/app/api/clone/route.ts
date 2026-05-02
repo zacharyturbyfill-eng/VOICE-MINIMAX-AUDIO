@@ -41,7 +41,13 @@ export async function POST(req: NextRequest) {
     }
 
     const fileId = uploadData.file?.file_id;
-    const voiceId = (voiceName || 'voice').toLowerCase().replace(/\s+/g, '_') + '_' + Date.now();
+    const slug = (voiceName || 'voice')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '');
+    const voiceId = `v_${slug}_${Math.random().toString(36).substring(2, 7)}`;
 
     const cloneRes = await fetch(`https://api.minimax.io/v1/voice_clone`, {
       method: 'POST',

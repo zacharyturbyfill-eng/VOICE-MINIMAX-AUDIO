@@ -505,42 +505,45 @@ export default function Dashboard() {
 
   const handleSaveVoice = async () => {
     if (!voiceName.trim() || !cloningFile) {
-      alert('Please provide a voice name.');
+      alert('Please provide a voice name and audio file.');
       return;
     }
     setIsCloning(true);
     try {
-      const res = await fetch('/api/clone/confirm', {
+      const formData = new FormData();
+      formData.append('file', cloningFile);
+      formData.append('voiceName', voiceName);
+      formData.append('gender', voiceGender);
+      formData.append('description', voiceDesc);
+
+      const res = await fetch('/api/clone', {
         method: 'POST',
-        headers: minimaxHeaders(),
-        body: JSON.stringify({
-          file_id: tempFileId,
-          voice_name: voiceName,
-          gender: voiceGender,
-          description: voiceDesc
-        })
+        headers: minimaxHeaders(false),
+        body: formData
       });
       const data = await res.json();
       
-      if (data.status_code === 0) {
+      if (data.base_resp?.status_code === 0 || data.status_code === 0) {
+        const vId = data.voice_id;
         // Save to local storage to handle API delay
         const localVoices = JSON.parse(localStorage.getItem('minimax_local_voices') || '[]');
         localVoices.push({
-          voice_id: data.voice_id,
+          voice_id: vId,
           voice_name: voiceName,
           is_cloned: true,
           created_at: new Date().toISOString()
         });
         localStorage.setItem('minimax_local_voices', JSON.stringify(localVoices));
 
-        alert('Voice saved successfully!');
-        setShowRegisterModal(false);
+        alert('Voice created and saved successfully!');
         setCloneStep(1);
         setCloningFile(null);
+        setVoiceName('');
         fetchVoices();
         setActiveTab('editor');
       } else {
-        throw new Error(data.error || data.status_msg || `Saving failed${data.status_code ? ` (code: ${data.status_code})` : ''}`);
+        const msg = data.base_resp?.status_msg || data.error || data.status_msg || 'Creation failed';
+        throw new Error(msg);
       }
     } catch (err: any) {
       alert(err.message);
@@ -1111,7 +1114,7 @@ export default function Dashboard() {
 
                     <div className="space-y-12">
                        {/* Step 1: Upload */}
-                      <div className={cn("space-y-6 transition-opacity", cloneStep !== 1 && "opacity-40 pointer-events-none")}>
+                      <div className="space-y-8">
                         <div className="flex items-center gap-4">
                            <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white font-black text-sm">1</div>
                            <h3 className="text-xl font-bold text-white">Import Audio Sample</h3>
@@ -1123,8 +1126,6 @@ export default function Dashboard() {
                             ref={fileInputRef}
                             onChange={(e) => {
                               setCloningFile(e.target.files?.[0] || null);
-                              setCloneStep(1);
-                              setPreviewAudioUrl(null);
                             }}
                             className="hidden" 
                             accept="audio/*"
@@ -1147,75 +1148,55 @@ export default function Dashboard() {
                           </div>
                         </div>
 
-                        <div className="space-y-4">
-                          <label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Text to Preview</label>
-                          <textarea 
-                            value={previewText}
-                            onChange={(e) => setPreviewText(e.target.value)}
-                            className="w-full bg-black/40 border border-white/10 rounded-3xl p-6 outline-none focus:ring-2 focus:ring-primary/50 transition-all font-medium text-sm min-h-[120px]"
-                            placeholder="Enter text to generate a preview of the cloned voice..."
-                          />
-                        </div>
+                        <div className="bg-white/5 border border-white/5 rounded-[2.5rem] p-8 space-y-6">
+                          <div className="space-y-3">
+                            <label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Voice Name</label>
+                            <input 
+                              type="text" 
+                              value={voiceName}
+                              onChange={(e) => setVoiceName(e.target.value)}
+                              placeholder="e.g. Dr. Phuc Premium"
+                              className="w-full bg-black/40 border border-white/10 rounded-2xl px-6 py-4 text-white font-bold outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                            />
+                          </div>
 
-                        <div className="flex items-center gap-3 p-4 bg-primary/10 border border-primary/20 rounded-2xl">
-                          <AlertCircle className="w-5 h-5 text-primary shrink-0" />
-                          <p className="text-[10px] text-primary font-bold leading-tight uppercase tracking-wider">
-                            By generating, you confirm you have legal rights to use this voice.
-                          </p>
+                          <div className="grid grid-cols-2 gap-6">
+                            <div className="space-y-3">
+                              <label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Language Boost</label>
+                              <select
+                                value={voiceLanguageBoost}
+                                onChange={(e) => setVoiceLanguageBoost(e.target.value)}
+                                className="w-full bg-black/40 border border-white/10 rounded-2xl px-6 py-4 text-white font-bold outline-none"
+                              >
+                                <option value="Vietnamese">Vietnamese</option>
+                                <option value="English">English</option>
+                                <option value="Chinese">Chinese</option>
+                                <option value="auto">Auto</option>
+                              </select>
+                            </div>
+                            <div className="space-y-3">
+                              <label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Gender</label>
+                              <select 
+                                value={voiceGender}
+                                onChange={(e) => setVoiceGender(e.target.value)}
+                                className="w-full bg-black/40 border border-white/10 rounded-2xl px-6 py-4 text-white font-bold outline-none"
+                              >
+                                <option value="male">Male</option>
+                                <option value="female">Female</option>
+                              </select>
+                            </div>
+                          </div>
                         </div>
 
                         <button 
-                          onClick={handleInitialGenerateClone}
-                          disabled={isCloning || !cloningFile}
-                          className="w-full py-6 rounded-[2rem] bg-primary text-white font-black uppercase tracking-[0.2em] shadow-2xl shadow-primary/40 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
+                          onClick={handleSaveVoice}
+                          disabled={isCloning || !cloningFile || !voiceName}
+                          className="w-full py-6 rounded-[2rem] bg-gradient-to-r from-primary to-blue-600 text-white font-black uppercase tracking-[0.2em] shadow-2xl shadow-primary/40 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
                         >
-                          {isCloning ? "Processing..." : "Create Voice"}
+                          {isCloning ? "Creating Voice..." : "Create & Save Voice"}
                         </button>
                       </div>
 
-                      {/* Step 2: Preview & Confirm */}
-                      {cloneStep === 2 && (
-                        <motion.div 
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="mt-12 p-8 bg-primary/5 border border-primary/20 rounded-[3rem] space-y-8"
-                        >
-                          <div className="flex items-center gap-4">
-                             <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white font-black text-sm">2</div>
-                             <h3 className="text-xl font-bold text-white">Preview & Save</h3>
-                          </div>
-
-                          {previewAudioUrl && (
-                            <div className="flex items-center gap-6 bg-black/40 p-6 rounded-[2rem] border border-white/5">
-                               <button 
-                                 onClick={() => new Audio(previewAudioUrl).play()}
-                                 className="w-14 h-14 rounded-full bg-primary flex items-center justify-center text-white shadow-lg"
-                               >
-                                 <Play className="w-6 h-6 fill-current ml-1" />
-                               </button>
-                               <div className="flex-1">
-                                  <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Preview Generated</p>
-                                  <p className="text-sm font-medium text-white/70">Listen to how your cloned voice sounds.</p>
-                               </div>
-                            </div>
-                          )}
-
-                          <div className="flex gap-4">
-                            <button 
-                              onClick={() => setCloneStep(1)}
-                              className="flex-1 py-5 rounded-2xl bg-white/5 text-white font-black uppercase tracking-widest hover:bg-white/10 transition-all border border-white/10"
-                            >
-                              Try Again
-                            </button>
-                            <button 
-                              onClick={handleConfirmClone}
-                              className="flex-[2] py-5 rounded-2xl bg-gradient-to-r from-primary to-blue-600 text-white font-black uppercase tracking-widest shadow-xl shadow-primary/30 hover:scale-105 active:scale-95 transition-all"
-                            >
-                              Confirm & Register
-                            </button>
-                          </div>
-                        </motion.div>
-                      )}
 
                     </div>
                   </div>
