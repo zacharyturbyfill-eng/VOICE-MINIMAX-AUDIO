@@ -53,6 +53,14 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+type MiniMaxCredential = {
+  id: string;
+  apiKey: string;
+  groupId: string;
+  note: string;
+  createdAt?: string;
+};
+
 export default function Dashboard() {
   const [script, setScript] = useState('Speaker A: Hello, this is a test of the MiniMax direct API.\nSpeaker B: It sounds amazing! (laughs)');
   const [selectedVoice, setSelectedVoice] = useState<string>('');
@@ -61,6 +69,7 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('editor');
   const [selectedEmotion, setSelectedEmotion] = useState<string>('calm');
   const [selectedEffect, setSelectedEffect] = useState<string>('none');
+  const [selectedModel, setSelectedModel] = useState<string>('speech-2.8-turbo');
   const [speed, setSpeed] = useState(1);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [roleMap, setRoleMap] = useState<Record<string, string>>({
@@ -90,8 +99,22 @@ export default function Dashboard() {
   const [generatedChunks, setGeneratedChunks] = useState<any[]>([]);
   const [mergedAudioUrl, setMergedAudioUrl] = useState<string | null>(null);
   const [isSequencePlaying, setIsSequencePlaying] = useState(false);
+  const [credentials, setCredentials] = useState<MiniMaxCredential[]>([]);
+  const [selectedCredentialId, setSelectedCredentialId] = useState('');
+  const [credentialNote, setCredentialNote] = useState('');
+  const [credentialApiKey, setCredentialApiKey] = useState('');
+  const [credentialGroupId, setCredentialGroupId] = useState('');
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
   const sequenceAudioRef = React.useRef<HTMLAudioElement | null>(null);
+  const selectedCredential = credentials.find((item) => item.id === selectedCredentialId);
+
+  const minimaxHeaders = (includeJson = true) => {
+    const headers: Record<string, string> = {};
+    if (includeJson) headers['Content-Type'] = 'application/json';
+    if (selectedCredential?.apiKey) headers['x-minimax-api-key'] = selectedCredential.apiKey;
+    if (selectedCredential?.groupId) headers['x-minimax-group-id'] = selectedCredential.groupId;
+    return headers;
+  };
 
   const handleMergePreview = async () => {
     if (generatedChunks.length === 0) return;
@@ -130,7 +153,11 @@ export default function Dashboard() {
   const fetchQuota = async () => {
     setQuotaLoading(true);
     try {
-      const res = await fetch('/api/quota');
+      const res = await fetch('/api/quota', {
+        method: 'POST',
+        headers: minimaxHeaders(),
+        body: JSON.stringify({})
+      });
       const data = await res.json();
       setQuotaInfo(data);
     } catch (err) {
@@ -143,13 +170,78 @@ export default function Dashboard() {
   useEffect(() => {
     fetchVoices();
     fetchQuota();
+  }, [selectedCredentialId]);
+
+  const loadCredentials = async () => {
+    try {
+      const res = await fetch('/api/credentials');
+      const data = await res.json();
+      const list = data.credentials || [];
+      setCredentials(list);
+      if (list.length > 0) {
+        setSelectedCredentialId((prev) => prev || list[0].id);
+      } else {
+        setSelectedCredentialId('');
+      }
+    } catch {
+      setCredentials([]);
+    }
+  };
+
+  useEffect(() => {
+    loadCredentials();
   }, []);
+
+  const saveCredential = async () => {
+    if (!credentialApiKey.trim() || !credentialGroupId.trim()) {
+      alert('Please fill API Key and Group ID.');
+      return;
+    }
+    const res = await fetch('/api/credentials', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apiKey: credentialApiKey.trim(),
+        groupId: credentialGroupId.trim(),
+        note: credentialNote.trim()
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.error || 'Failed to save credential.');
+      return;
+    }
+    const updated = data.credentials || [];
+    setCredentials(updated);
+    if (data.credential?.id) setSelectedCredentialId(data.credential.id);
+    setCredentialNote('');
+    setCredentialApiKey('');
+    setCredentialGroupId('');
+  };
+
+  const removeCredential = async (id: string) => {
+    const res = await fetch('/api/credentials', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.error || 'Failed to remove credential.');
+      return;
+    }
+    const updated = data.credentials || [];
+    setCredentials(updated);
+    if (selectedCredentialId === id) {
+      setSelectedCredentialId(updated[0]?.id || '');
+    }
+  };
 
   const fetchVoices = async () => {
     try {
       const res = await fetch('/api/voices', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: minimaxHeaders(),
         body: JSON.stringify({ type: 'all' })
       });
       const data = await res.json();
@@ -243,9 +335,9 @@ export default function Dashboard() {
         const voiceId = roleMap[line.speaker] || selectedVoice;
         const res = await fetch('/api/tts', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: minimaxHeaders(),
           body: JSON.stringify({
-            model: 'speech-2.8-hd',
+            model: selectedModel,
             text: line.text,
             voice_setting: { voice_id: voiceId, speed: speed, vol: 1, pitch: 0, emotion: selectedEmotion },
             audio_setting: { format: 'mp3' }
@@ -299,9 +391,9 @@ export default function Dashboard() {
     try {
       const res = await fetch('/api/tts', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: minimaxHeaders(),
         body: JSON.stringify({
-          model: 'speech-2.8-hd',
+          model: selectedModel,
           text: 'Hello, this is a voice preview.',
           voice_setting: {
             voice_id: voiceId,
@@ -343,6 +435,7 @@ export default function Dashboard() {
 
       const res = await fetch('/api/clone/generate', {
         method: 'POST',
+        headers: minimaxHeaders(false),
         body: formData
       });
       const data = await res.json();
@@ -378,7 +471,7 @@ export default function Dashboard() {
     try {
       const res = await fetch('/api/clone/confirm', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: minimaxHeaders(),
         body: JSON.stringify({
           file_id: tempFileId,
           voice_name: voiceName,
@@ -420,7 +513,7 @@ export default function Dashboard() {
     try {
       const res = await fetch('/api/voices/delete', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: minimaxHeaders(),
         body: JSON.stringify({ voice_id: voiceId })
       });
       const data = await res.json();
@@ -467,7 +560,7 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-foreground flex overflow-hidden font-sans">
       {/* Sidebar */}
-      <aside className="w-64 border-r border-white/5 bg-[#111111]/80 backdrop-blur-3xl flex flex-col z-20">
+      <aside className="w-64 border-r border-white/5 bg-[#111111]/80 backdrop-blur-3xl flex flex-col z-20 overflow-y-auto">
         <div className="p-8 flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center shadow-2xl shadow-primary/30">
             <Sparkles className="w-6 h-6 text-white" />
@@ -531,6 +624,52 @@ export default function Dashboard() {
             >
               {quotaLoading ? 'Syncing...' : 'Refresh Balance'}
             </button>
+
+            <div className="pt-2 border-t border-white/10 space-y-2">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">MiniMax Credentials</p>
+              <select
+                value={selectedCredentialId}
+                onChange={(e) => setSelectedCredentialId(e.target.value)}
+                className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-[11px] text-white"
+              >
+                <option value="">Select account</option>
+                {credentials.map((item) => (
+                  <option key={item.id} value={item.id}>{item.note || item.groupId}</option>
+                ))}
+              </select>
+              {selectedCredential && (
+                <button
+                  onClick={() => removeCredential(selectedCredential.id)}
+                  className="w-full py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-[10px] font-bold uppercase tracking-widest text-red-300"
+                >
+                  Remove Selected
+                </button>
+              )}
+              <input
+                value={credentialNote}
+                onChange={(e) => setCredentialNote(e.target.value)}
+                placeholder="Ghi chu (optional)"
+                className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-[11px] text-white"
+              />
+              <input
+                value={credentialApiKey}
+                onChange={(e) => setCredentialApiKey(e.target.value)}
+                placeholder="API Key"
+                className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-[11px] text-white"
+              />
+              <input
+                value={credentialGroupId}
+                onChange={(e) => setCredentialGroupId(e.target.value)}
+                placeholder="Group ID"
+                className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-[11px] text-white"
+              />
+              <button
+                onClick={saveCredential}
+                className="w-full py-2.5 rounded-xl bg-primary/80 hover:bg-primary text-[10px] font-bold uppercase tracking-widest transition-all border border-primary/30"
+              >
+                Save Credential
+              </button>
+            </div>
           </div>
         </div>
       </aside>
@@ -548,7 +687,16 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-             <button className="p-3 rounded-2xl bg-white/5 hover:bg-white/10 transition-all border border-white/5">
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white"
+            >
+              <option value="speech-2.8-turbo">speech-2.8-turbo</option>
+              <option value="speech-2.6-turbo">speech-2.6-turbo</option>
+              <option value="speech-02-turbo">speech-02-turbo</option>
+            </select>
+            <button className="p-3 rounded-2xl bg-white/5 hover:bg-white/10 transition-all border border-white/5">
                 <Settings className="w-5 h-5 text-muted-foreground" />
              </button>
              <button className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-primary text-white font-bold text-sm shadow-2xl shadow-primary/30 hover:scale-105 active:scale-95 transition-all">

@@ -1,24 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { resolveMiniMaxCredentials } from '@/lib/minimax-auth';
 
 export async function POST(req: NextRequest) {
   try {
-    const apiKey = process.env.MINIMAX_API_KEY;
-    const groupId = process.env.MINIMAX_GROUP_ID;
+    const body = await req.json();
+    const { apiKey, groupId } = resolveMiniMaxCredentials(req, body);
 
-    if (!apiKey) {
-      return NextResponse.json({ error: 'API Key not configured' }, { status: 500 });
+    if (!apiKey || !groupId) {
+      return NextResponse.json({ error: 'API Key or Group ID not configured' }, { status: 400 });
     }
 
-    console.log(`--- Fetching All Possible Voice Types ---`);
-
-    // Fetch multiple types to find the cloned voices
     const types = ['system', 'voice_cloning', 'voice_generation'];
     const results = await Promise.allSettled(
-      types.map(type => 
-        fetch(`https://api.minimax.io/v1/get_voice?GroupId=${groupId}`, {
+      types.map(type =>
+        fetch(`https://api.minimax.io/v1/get_voice`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${apiKey}`,
+            'x-group-id': groupId,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({ voice_type: type }),
@@ -26,22 +25,17 @@ export async function POST(req: NextRequest) {
       )
     );
 
-    let systemVoices = [];
-    let clonedVoices = [];
+    const systemVoices: any[] = [];
+    const clonedVoices: any[] = [];
 
-    results.forEach((result, index) => {
-      if (result.status === 'fulfilled') {
-        const data = result.value;
-        const type = types[index];
-        console.log(`Type ${type}: Found ${data.system_voice?.length || 0} system, ${data.voice_cloning?.length || 0} cloning, ${data.voice_generation?.length || 0} generation voices.`);
-        
-        if (data.system_voice) systemVoices.push(...data.system_voice);
-        if (data.voice_cloning) clonedVoices.push(...data.voice_cloning);
-        if (data.voice_generation) clonedVoices.push(...data.voice_generation);
-      }
+    results.forEach((result) => {
+      if (result.status !== 'fulfilled') return;
+      const data = result.value;
+      if (data.system_voice) systemVoices.push(...data.system_voice);
+      if (data.voice_cloning) clonedVoices.push(...data.voice_cloning);
+      if (data.voice_generation) clonedVoices.push(...data.voice_generation);
     });
 
-    // Final deduplication by voice_id
     const uniqueSystem = Array.from(new Map(systemVoices.map(v => [v.voice_id, v])).values());
     const uniqueCloned = Array.from(new Map(clonedVoices.map(v => [v.voice_id, v])).values());
 
@@ -50,7 +44,6 @@ export async function POST(req: NextRequest) {
       cloned_voice: uniqueCloned
     });
   } catch (error: any) {
-    console.error('Voices API Error:', error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

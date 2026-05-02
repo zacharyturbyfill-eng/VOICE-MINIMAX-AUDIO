@@ -38,10 +38,12 @@ export interface MiniMaxT2AResp {
 
 export class MiniMaxClient {
   private apiKey: string;
+  private groupId: string;
   private baseUrl = 'https://api.minimax.io/v1';
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, groupId: string) {
     this.apiKey = apiKey;
+    this.groupId = groupId;
   }
 
   async t2a(payload: MiniMaxT2AReq): Promise<MiniMaxT2AResp> {
@@ -49,6 +51,7 @@ export class MiniMaxClient {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.apiKey}`,
+        'x-group-id': this.groupId,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -70,6 +73,7 @@ export class MiniMaxClient {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.apiKey}`,
+        'x-group-id': this.groupId,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ voice_type: type }),

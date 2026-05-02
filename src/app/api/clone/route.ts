@@ -1,25 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { resolveMiniMaxCredentials } from '@/lib/minimax-auth';
 
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File;
     const voiceName = formData.get('voiceName') as string;
-    const apiKey = process.env.MINIMAX_API_KEY;
-    const groupId = process.env.MINIMAX_GROUP_ID;
+    const { apiKey, groupId } = resolveMiniMaxCredentials(req, {
+      apiKey: formData.get('apiKey') as string,
+      groupId: formData.get('groupId') as string,
+    });
 
-    if (!apiKey || !file) {
-      return NextResponse.json({ error: 'Missing API Key or File' }, { status: 400 });
+    if (!apiKey || !groupId || !file) {
+      return NextResponse.json({ error: 'Missing API Key, Group ID or File' }, { status: 400 });
     }
 
-    // Step 1: Upload file
     const uploadFormData = new FormData();
     uploadFormData.append('file', file);
     uploadFormData.append('purpose', 'voice_clone');
 
-    const uploadRes = await fetch(`https://api.minimax.io/v1/files/upload?GroupId=${groupId}`, {
+    const uploadRes = await fetch(`https://api.minimax.io/v1/files/upload`, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}` },
+      headers: { 
+        'Authorization': `Bearer ${apiKey}`,
+        'x-group-id': groupId
+      },
       body: uploadFormData
     });
 
@@ -36,14 +41,13 @@ export async function POST(req: NextRequest) {
     }
 
     const fileId = uploadData.file?.file_id;
+    const voiceId = (voiceName || 'voice').toLowerCase().replace(/\s+/g, '_') + '_' + Date.now();
 
-    // Step 2: Clone Voice (Using the correct /v1/voice_clone endpoint)
-    const voiceId = voiceName.toLowerCase().replace(/\s+/g, '_') + '_' + Date.now();
-    
-    const cloneRes = await fetch(`https://api.minimax.io/v1/voice_clone?GroupId=${groupId}`, {
+    const cloneRes = await fetch(`https://api.minimax.io/v1/voice_clone`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
+        'x-group-id': groupId,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -59,11 +63,9 @@ export async function POST(req: NextRequest) {
     } catch (e) {
       return NextResponse.json({ error: 'Failed to parse clone response', details: rawCloneText }, { status: 500 });
     }
-    
-    // Return the new voiceId so frontend can use it
+
     return NextResponse.json({ ...cloneData, voice_id: voiceId });
   } catch (error: any) {
-    console.error('Clone Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

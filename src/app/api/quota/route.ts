@@ -1,18 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { resolveMiniMaxCredentials } from '@/lib/minimax-auth';
 
-export async function GET(req: NextRequest) {
+async function handleQuota(req: NextRequest) {
   try {
-    const apiKey = process.env.MINIMAX_API_KEY;
-
-    if (!apiKey) {
-      return NextResponse.json({ error: 'API Key not configured' }, { status: 500 });
+    let body: any = {};
+    if (req.method === 'POST') {
+      body = await req.json();
     }
 
-    // Try Token Plan remains endpoint
-    const response = await fetch('https://api.minimax.io/v1/token_plan/remains', {
+    const { apiKey, groupId } = resolveMiniMaxCredentials(req, body);
+
+    if (!apiKey || !groupId) {
+      return NextResponse.json({ error: 'API Key or Group ID not configured' }, { status: 400 });
+    }
+
+    const response = await fetch(`https://api.minimax.io/v1/token_plan/remains?GroupId=${groupId}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
+        'x-group-id': groupId,
         'Content-Type': 'application/json',
       },
     });
@@ -22,4 +28,12 @@ export async function GET(req: NextRequest) {
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+}
+
+export async function GET(req: NextRequest) {
+  return handleQuota(req);
+}
+
+export async function POST(req: NextRequest) {
+  return handleQuota(req);
 }

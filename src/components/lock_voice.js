@@ -12,7 +12,7 @@ async function lockVoice() {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: "speech-2.8-hd",
+                model: "speech-2.8-turbo",
                 text: "Chào bạn, tôi là Bác Sĩ Phúc. Giọng của tôi đã được kích hoạt thành công.",
                 voice_setting: {
                     voice_id: VOICE_ID,
