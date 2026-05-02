@@ -370,8 +370,13 @@ export default function Dashboard() {
       const lines = parseScript(script);
       setGeneratedChunks(lines.map((l, i) => ({ ...l, id: i, status: 'generating' })));
 
-      const results = await Promise.all(lines.map(async (line, index) => {
+      const results = [];
+      let totalUsage = 0;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
         const voiceId = roleMap[line.speaker] || selectedVoice;
+        
         const res = await fetch('/api/tts', {
           method: 'POST',
           headers: minimaxHeaders(),
@@ -382,41 +387,48 @@ export default function Dashboard() {
             audio_setting: { format: 'mp3' }
           })
         });
+        
         const data = await res.json();
         if (data.base_resp?.status_code !== 0) {
           const statusMsg = data.base_resp?.status_msg || data.error || 'TTS failed';
-          throw new Error(`Line ${index + 1}: ${statusMsg}`);
+          throw new Error(`Line ${i + 1}: ${statusMsg}`);
         }
+        
         const url = toAudioUrl(data.data?.audio);
         if (!url) {
-          throw new Error(`Line ${index + 1}: API returned empty/invalid audio payload`);
+          throw new Error(`Line ${i + 1}: API returned empty/invalid audio payload`);
         }
-        const result = { id: index, speaker: line.speaker, text: line.text, audio: url, usage: data.extra_info?.usage_characters, status: 'ready' as const };
-        setGeneratedChunks(prev => prev.map(c => c.id === index ? result : c));
-        return result;
-      }));
-
-      results.sort((a, b) => a.id - b.id);
-      let totalUsage = 0;
-      
-      for (let i = 0; i < results.length; i++) {
-        const result = results[i];
-        totalUsage += result.usage || 0;
-        setActiveLineIndex(i);
         
-        const audioUrl = result.audio ?? undefined;
-        if (audioUrl && isSequencePlaying) {
+        const result = { 
+          id: i, 
+          speaker: line.speaker, 
+          text: line.text, 
+          audio: url, 
+          usage: data.extra_info?.usage_characters, 
+          status: 'ready' as const 
+        };
+        
+        results.push(result);
+        totalUsage += result.usage || 0;
+        
+        setGeneratedChunks(prev => prev.map(c => c.id === i ? result : c));
+        
+        if (isSequencePlaying) {
+          setActiveLineIndex(i);
           await new Promise((resolve) => {
-            const audio = new Audio(audioUrl);
+            const audio = new Audio(url);
             sequenceAudioRef.current = audio;
             audio.onended = resolve;
             audio.onerror = resolve;
             audio.play();
           });
         }
-        if (!isSequencePlaying) break;
+
+        if (i < lines.length - 1) {
+          await new Promise(r => setTimeout(r, 300));
+        }
       }
-      
+
       setUsageChars(totalUsage);
       handleMergePreview();
     } catch (err: any) {
