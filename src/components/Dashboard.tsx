@@ -368,64 +368,84 @@ export default function Dashboard() {
     
     try {
       const lines = parseScript(script);
-      setGeneratedChunks(lines.map((l, i) => ({ ...l, id: i, status: 'generating' })));
+      
+      // Khởi tạo chunks nếu chưa có hoặc số lượng thay đổi
+      if (generatedChunks.length !== lines.length) {
+        setGeneratedChunks(lines.map((l, i) => ({ ...l, id: i, status: 'generating' })));
+      } else {
+        // Cập nhật text cho các chunks hiện có nếu cần
+        setGeneratedChunks(prev => prev.map((c, i) => ({ ...c, text: lines[i].text, speaker: lines[i].speaker })));
+      }
 
-      const results = [];
-      let totalUsage = 0;
+      const currentChunks = generatedChunks.length === lines.length ? generatedChunks : lines.map((l, i) => ({ ...l, id: i, status: 'generating' }));
+      const results = [...currentChunks];
+      let totalUsage = usageChars || 0;
+      const BATCH_SIZE = 5;
 
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        const voiceId = roleMap[line.speaker] || selectedVoice;
-        
-        const res = await fetch('/api/tts', {
-          method: 'POST',
-          headers: minimaxHeaders(),
-          body: JSON.stringify({
-            model: selectedModel,
-            text: line.text,
-            voice_setting: { voice_id: voiceId, speed: speed, vol: 1, pitch: 0, emotion: selectedEmotion },
-            audio_setting: { format: 'mp3' }
-          })
+      for (let i = 0; i < lines.length; i += BATCH_SIZE) {
+        const batch = lines.slice(i, i + BATCH_SIZE);
+        const batchPromises = batch.map(async (line, index) => {
+          const globalIndex = i + index;
+          
+          // NẾU CÂU NÀY ĐÃ CÓ AUDIO RỒI THÌ BỎ QUA ĐỂ TIẾT KIỆM QUOTA
+          if (currentChunks[globalIndex]?.status === 'ready' && currentChunks[globalIndex]?.audio) {
+            return currentChunks[globalIndex];
+          }
+
+          const voiceId = roleMap[line.speaker] || selectedVoice;
+          setGeneratedChunks(prev => prev.map(c => c.id === globalIndex ? { ...c, status: 'generating' } : c));
+          
+          try {
+            const res = await fetch('/api/tts', {
+              method: 'POST',
+              headers: minimaxHeaders(),
+              body: JSON.stringify({
+                model: selectedModel,
+                text: line.text,
+                voice_setting: { voice_id: voiceId, speed: speed, vol: 1, pitch: 0, emotion: selectedEmotion },
+                audio_setting: { format: 'mp3' }
+              })
+            });
+            
+            const data = await res.json();
+            if (data.base_resp?.status_code !== 0) {
+              const errorMsg = data.base_resp?.status_msg || data.error || 'TTS failed';
+              const errorResult = { ...currentChunks[globalIndex], id: globalIndex, status: 'error' as const, error: errorMsg };
+              setGeneratedChunks(prev => prev.map(c => c.id === globalIndex ? errorResult : c));
+              return errorResult;
+            }
+            
+            const url = toAudioUrl(data.data?.audio);
+            if (!url) throw new Error('Invalid audio payload');
+            
+            const result = { 
+              id: globalIndex, 
+              speaker: line.speaker, 
+              text: line.text, 
+              audio: url, 
+              usage: data.extra_info?.usage_characters, 
+              status: 'ready' as const 
+            };
+            
+            setGeneratedChunks(prev => prev.map(c => c.id === globalIndex ? result : c));
+            totalUsage += result.usage || 0;
+            return result;
+          } catch (err: any) {
+            const errorResult = { ...currentChunks[globalIndex], id: globalIndex, status: 'error' as const, error: err.message };
+            setGeneratedChunks(prev => prev.map(c => c.id === globalIndex ? errorResult : c));
+            return errorResult;
+          }
         });
-        
-        const data = await res.json();
-        if (data.base_resp?.status_code !== 0) {
-          const statusMsg = data.base_resp?.status_msg || data.error || 'TTS failed';
-          throw new Error(`Line ${i + 1}: ${statusMsg}`);
-        }
-        
-        const url = toAudioUrl(data.data?.audio);
-        if (!url) {
-          throw new Error(`Line ${i + 1}: API returned empty/invalid audio payload`);
-        }
-        
-        const result = { 
-          id: i, 
-          speaker: line.speaker, 
-          text: line.text, 
-          audio: url, 
-          usage: data.extra_info?.usage_characters, 
-          status: 'ready' as const 
-        };
-        
-        results.push(result);
-        totalUsage += result.usage || 0;
-        
-        setGeneratedChunks(prev => prev.map(c => c.id === i ? result : c));
-        
-        if (isSequencePlaying) {
-          setActiveLineIndex(i);
-          await new Promise((resolve) => {
-            const audio = new Audio(url);
-            sequenceAudioRef.current = audio;
-            audio.onended = resolve;
-            audio.onerror = resolve;
-            audio.play();
-          });
-        }
 
-        if (i < lines.length - 1) {
-          await new Promise(r => setTimeout(r, 300));
+        const batchResults = await Promise.all(batchPromises);
+        // Cập nhật kết quả vào mảng tổng
+        batchResults.forEach((r, idx) => {
+          results[i + idx] = r;
+        });
+
+        // Nghỉ rất ngắn giữa các batch nếu còn dữ liệu
+        if (i + BATCH_SIZE < lines.length) {
+          await new Promise(r => setTimeout(r, 200));
         }
       }
 
@@ -438,6 +458,48 @@ export default function Dashboard() {
       setIsPlaying(false);
       setIsSequencePlaying(false);
       setActiveLineIndex(null);
+    }
+  };
+
+  const handleRetryChunk = async (index: number) => {
+    const chunk = generatedChunks[index];
+    if (!chunk) return;
+
+    setGeneratedChunks(prev => prev.map(c => c.id === index ? { ...c, status: 'generating', error: undefined } : c));
+    
+    try {
+      const voiceId = roleMap[chunk.speaker] || selectedVoice;
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: minimaxHeaders(),
+        body: JSON.stringify({
+          model: selectedModel,
+          text: chunk.text,
+          voice_setting: { voice_id: voiceId, speed: speed, vol: 1, pitch: 0, emotion: selectedEmotion },
+          audio_setting: { format: 'mp3' }
+        })
+      });
+      
+      const data = await res.json();
+      if (data.base_resp?.status_code !== 0) {
+        throw new Error(data.base_resp?.status_msg || 'Retry failed');
+      }
+      
+      const url = toAudioUrl(data.data?.audio);
+      if (!url) throw new Error('Invalid audio payload');
+      
+      const result = { 
+        ...chunk,
+        audio: url, 
+        usage: data.extra_info?.usage_characters, 
+        status: 'ready' as const 
+      };
+      
+      setGeneratedChunks(prev => prev.map(c => c.id === index ? result : c));
+      setUsageChars(prev => (prev || 0) + (result.usage || 0));
+      handleMergePreview();
+    } catch (err: any) {
+      setGeneratedChunks(prev => prev.map(c => c.id === index ? { ...c, status: 'error', error: err.message } : c));
     }
   };
 
@@ -983,13 +1045,16 @@ export default function Dashboard() {
                             transition={{ delay: idx * 0.1 }}
                             className={cn(
                               "bg-[#151515] border rounded-3xl p-6 flex items-center gap-6 transition-all",
-                              activeLineIndex === idx ? "border-primary ring-1 ring-primary/50 shadow-lg shadow-primary/10" : "border-white/5"
+                              activeLineIndex === idx ? "border-primary ring-1 ring-primary/50 shadow-lg shadow-primary/10" : 
+                              chunk.status === 'error' ? "border-red-500/30 bg-red-500/5" : "border-white/5"
                             )}
                           >
                             <button 
-                              disabled={chunk.status !== 'ready'}
+                              disabled={chunk.status === 'generating'}
                               onClick={() => {
-                                if (activeLineIndex === idx) {
+                                if (chunk.status === 'error') {
+                                  handleRetryChunk(idx);
+                                } else if (activeLineIndex === idx) {
                                   stopSequence();
                                 } else if (chunk.audio) {
                                   new Audio(chunk.audio).play();
@@ -999,11 +1064,15 @@ export default function Dashboard() {
                                 "w-12 h-12 rounded-2xl flex items-center justify-center transition-all",
                                 chunk.status === 'ready' 
                                   ? "bg-primary/20 text-primary hover:bg-primary hover:text-white" 
+                                  : chunk.status === 'error'
+                                  ? "bg-red-500/20 text-red-500 hover:bg-red-500 hover:text-white"
                                   : "bg-white/5 text-muted-foreground animate-pulse"
                               )}
                             >
-                              {chunk.status !== 'ready' ? (
+                              {chunk.status === 'generating' ? (
                                 <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                              ) : chunk.status === 'error' ? (
+                                <AlertCircle className="w-5 h-5" />
                               ) : activeLineIndex === idx ? (
                                 <Pause className="w-5 h-5 fill-current" />
                               ) : (
@@ -1019,9 +1088,23 @@ export default function Dashboard() {
                                       • {chunk.usage} tokens
                                     </span>
                                   )}
+                                  {chunk.status === 'error' && (
+                                    <span className="text-[9px] font-bold text-red-500 uppercase tracking-widest">
+                                      • Failed: {chunk.error}
+                                    </span>
+                                  )}
                                </div>
                                <p className="text-sm font-medium text-white/80 truncate">{chunk.text}</p>
                             </div>
+
+                            {chunk.status === 'error' && (
+                              <button 
+                                onClick={() => handleRetryChunk(idx)}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-[10px] font-bold text-red-500 uppercase tracking-widest border border-red-500/20 transition-all"
+                              >
+                                <Sparkles className="w-3 h-3" /> Retry
+                              </button>
+                            )}
 
                             {activeLineIndex === idx && (
                               <div className="flex gap-1 items-center px-4">
