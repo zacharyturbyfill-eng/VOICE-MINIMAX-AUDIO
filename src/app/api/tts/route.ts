@@ -3,11 +3,11 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const apiKey = process.env.MINIMAX_API_KEY;
-    const groupId = process.env.MINIMAX_GROUP_ID;
+    const apiKey = process.env.MINIMAX_API_KEY?.trim();
+    const groupId = process.env.MINIMAX_GROUP_ID?.trim();
 
-    if (!apiKey) {
-      return NextResponse.json({ error: 'API Key not configured' }, { status: 500 });
+    if (!apiKey || !groupId) {
+      return NextResponse.json({ error: 'MINIMAX_API_KEY or MINIMAX_GROUP_ID not configured' }, { status: 500 });
     }
 
     const payload = {

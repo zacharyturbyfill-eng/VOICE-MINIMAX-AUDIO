@@ -53,6 +53,35 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+const isHexAudio = (value: string) => /^[0-9a-fA-F]+$/.test(value) && value.length % 2 === 0;
+
+const toAudioUrl = (audioPayload: unknown): string | null => {
+  if (typeof audioPayload !== 'string' || !audioPayload.trim()) return null;
+  const raw = audioPayload.trim();
+
+  // MiniMax may return a direct URL in some responses.
+  if (raw.startsWith('http://') || raw.startsWith('https://')) {
+    return raw;
+  }
+
+  try {
+    if (isHexAudio(raw)) {
+      const pairs = raw.match(/.{1,2}/g);
+      if (!pairs) return null;
+      const bytes = new Uint8Array(pairs.map((byte) => parseInt(byte, 16)));
+      return URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
+    }
+
+    // Fallback: treat as base64 audio string.
+    const binary = atob(raw);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
+  } catch {
+    return null;
+  }
+};
+
 export default function Dashboard() {
   const [script, setScript] = useState('Speaker A: Hello, this is a test of the MiniMax direct API.\nSpeaker B: It sounds amazing! (laughs)');
   const [selectedVoice, setSelectedVoice] = useState<string>('');
@@ -94,12 +123,22 @@ export default function Dashboard() {
 
   const handleMergePreview = async () => {
     if (generatedChunks.length === 0) return;
+    const chunksWithAudio = generatedChunks.filter((c) => typeof c.audio === 'string' && c.audio.length > 0);
+    if (chunksWithAudio.length === 0) {
+      alert('No audio chunks to merge. Please check API response/error.');
+      return;
+    }
+
     const blobs = await Promise.all(
-      generatedChunks.filter(c => c.audio).map(async (c) => {
+      chunksWithAudio.map(async (c) => {
         const res = await fetch(c.audio);
         return await res.blob();
       })
     );
+    if (blobs.length === 0) {
+      alert('No audio blobs available for merge.');
+      return;
+    }
     const mergedBlob = new Blob(blobs, { type: 'audio/mpeg' });
     setMergedAudioUrl(URL.createObjectURL(mergedBlob));
   };
@@ -251,11 +290,13 @@ export default function Dashboard() {
           })
         });
         const data = await res.json();
-        const hex = data.data?.audio;
-        let url = null;
-        if (hex) {
-          const bytes = new Uint8Array(hex.match(/.{1,2}/g).map((byte: string) => parseInt(byte, 16)));
-          url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
+        if (data.base_resp?.status_code !== 0) {
+          const statusMsg = data.base_resp?.status_msg || data.error || 'TTS failed';
+          throw new Error(`Line ${index + 1}: ${statusMsg}`);
+        }
+        const url = toAudioUrl(data.data?.audio);
+        if (!url) {
+          throw new Error(`Line ${index + 1}: API returned empty/invalid audio payload`);
         }
         const result = { id: index, speaker: line.speaker, text: line.text, audio: url, usage: data.extra_info?.usage_characters, status: 'ready' as const };
         setGeneratedChunks(prev => prev.map(c => c.id === index ? result : c));
@@ -317,13 +358,12 @@ export default function Dashboard() {
         alert(`Synthesis failed: ${data.base_resp?.status_msg || 'Unknown error'}`);
         return;
       }
-      if (data.data?.audio) {
-        const hex = data.data.audio;
-        const bytes = new Uint8Array(hex.match(/.{1,2}/g).map((byte: string) => parseInt(byte, 16)));
-        const blob = new Blob([bytes], { type: 'audio/mpeg' });
-        const url = URL.createObjectURL(blob);
+      const url = toAudioUrl(data.data?.audio);
+      if (url) {
         const audio = new Audio(url);
         audio.play();
+      } else {
+        alert('Preview audio payload is empty or invalid.');
       }
     } catch (err) {
       console.error('Preview failed', err);
