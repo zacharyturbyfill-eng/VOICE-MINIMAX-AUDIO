@@ -589,6 +589,7 @@ export default function Dashboard() {
       formData.append('voiceName', voiceName);
       formData.append('gender', voiceGender);
       formData.append('description', voiceDesc);
+      formData.append('languageBoost', voiceLanguageBoost);
 
       const res = await fetch('/api/clone', {
         method: 'POST',
@@ -1266,6 +1267,8 @@ export default function Dashboard() {
                                 <option value="Vietnamese">Vietnamese</option>
                                 <option value="English">English</option>
                                 <option value="Chinese">Chinese</option>
+                                <option value="Japanese">Japanese</option>
+                                <option value="Korean">Korean</option>
                                 <option value="auto">Auto</option>
                               </select>
                             </div>

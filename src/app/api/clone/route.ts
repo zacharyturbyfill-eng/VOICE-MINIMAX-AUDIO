@@ -33,7 +33,10 @@ export async function POST(req: NextRequest) {
     try {
       uploadData = JSON.parse(rawUploadText.split('\n')[0]);
     } catch (e) {
-      return NextResponse.json({ error: 'Failed to parse upload response', details: rawUploadText }, { status: 500 });
+      if (rawUploadText.includes('Request Entity Too Large')) {
+        return NextResponse.json({ error: 'File quá lớn. Vui lòng chọn file dưới 4MB.' }, { status: 413 });
+      }
+      return NextResponse.json({ error: 'Lỗi từ MiniMax API (Upload)', details: rawUploadText.substring(0, 100) }, { status: 500 });
     }
 
     if (uploadData.base_resp?.status_code !== 0) {
@@ -67,7 +70,7 @@ export async function POST(req: NextRequest) {
     try {
       cloneData = JSON.parse(rawCloneText.split('\n')[0]);
     } catch (e) {
-      return NextResponse.json({ error: 'Failed to parse clone response', details: rawCloneText }, { status: 500 });
+      return NextResponse.json({ error: 'Lỗi từ MiniMax API (Clone)', details: rawCloneText.substring(0, 100) }, { status: 500 });
     }
 
     return NextResponse.json({ ...cloneData, voice_id: voiceId });
