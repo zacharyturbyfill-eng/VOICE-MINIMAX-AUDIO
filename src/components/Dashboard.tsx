@@ -582,7 +582,12 @@ export default function Dashboard() {
       alert('Please provide a voice name and audio file.');
       return;
     }
-    setIsCloning(true);
+    if (cloningFile.size > 4.5 * 1024 * 1024) {
+      alert('File quá lớn (giới hạn 4MB). Vui lòng chọn file ngắn hơn hoặc nén lại.');
+      setIsCloning(false);
+      return;
+    }
+
     try {
       const formData = new FormData();
       formData.append('file', cloningFile);
@@ -596,6 +601,16 @@ export default function Dashboard() {
         headers: minimaxHeaders(false),
         body: formData
       });
+      
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await res.text();
+        if (text.includes('Request Entity Too Large') || res.status === 413) {
+          throw new Error('File quá lớn (giới hạn 4MB). Vui lòng chọn file ngắn hơn.');
+        }
+        throw new Error('Lỗi từ Server: ' + text.substring(0, 50));
+      }
+
       const data = await res.json();
       
       if (data.base_resp?.status_code === 0 || data.status_code === 0) {
@@ -1221,7 +1236,14 @@ export default function Dashboard() {
                             type="file" 
                             ref={fileInputRef}
                             onChange={(e) => {
-                              setCloningFile(e.target.files?.[0] || null);
+                              const file = e.target.files?.[0] || null;
+                              if (file && file.size > 4.5 * 1024 * 1024) {
+                                alert('File này quá lớn (' + (file.size / 1024 / 1024).toFixed(1) + 'MB). Giới hạn là 4MB. Vui lòng chọn file khác.');
+                                e.target.value = ''; // Reset input
+                                setCloningFile(null);
+                                return;
+                              }
+                              setCloningFile(file);
                             }}
                             className="hidden" 
                             accept="audio/*"
