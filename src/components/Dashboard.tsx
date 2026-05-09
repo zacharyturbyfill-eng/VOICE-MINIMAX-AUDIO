@@ -435,7 +435,10 @@ export default function Dashboard() {
         headers: minimaxHeaders(false)
       });
 
-      if (!downloadRes.ok) throw new Error('Failed to download audio file');
+      if (!downloadRes.ok) {
+        const errData = await downloadRes.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to download audio file');
+      }
 
       const blob = await downloadRes.blob();
       const url = URL.createObjectURL(blob);

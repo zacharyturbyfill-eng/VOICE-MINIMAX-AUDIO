@@ -65,12 +65,17 @@ export async function GET(req: NextRequest) {
         headers: {
           'Authorization': `Bearer ${apiKey}`,
           'x-group-id': groupId,
-          'Content-Type': 'application/json',
         },
       });
       
       if (!response.ok) {
         return NextResponse.json({ error: 'Failed to retrieve file' }, { status: response.status });
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const errorData = await response.json();
+        return NextResponse.json({ error: 'MiniMax Error: ' + JSON.stringify(errorData) }, { status: 400 });
       }
 
       const buffer = await response.arrayBuffer();
