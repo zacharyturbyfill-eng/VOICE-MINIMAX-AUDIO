@@ -60,10 +60,12 @@ export async function GET(req: NextRequest) {
     } 
     
     if (action === 'download' && fileId) {
-      const response = await fetch(`https://api.minimax.io/v1/files/retrieve_content?file_id=${fileId}`, {
+      const response = await fetch(`https://api.minimax.io/v1/files/retrieve_content?file_id=${fileId}&GroupId=${groupId}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
+          'x-group-id': groupId,
+          'Content-Type': 'application/json',
         },
       });
       

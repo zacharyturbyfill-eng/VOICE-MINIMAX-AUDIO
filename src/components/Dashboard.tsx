@@ -429,6 +429,9 @@ export default function Dashboard() {
 
       if (!fileId) throw new Error('No file_id returned after completion');
 
+      // Add a small delay to allow MiniMax CDN/storage to synchronize the file
+      await new Promise(r => setTimeout(r, 3000));
+
       // 3. Download the audio file
       const downloadRes = await fetch(`/api/tts-async?action=download&file_id=${fileId}`, {
         method: 'GET',
