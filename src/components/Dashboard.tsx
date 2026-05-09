@@ -416,11 +416,13 @@ export default function Dashboard() {
         }
 
         const status = queryData.status; // Typically "Processing", "Success", "Failed"
+        console.log('Poll Status:', status, queryData);
+        
         if (status === 'Failed') {
           throw new Error('Task generation failed on server');
         }
 
-        if (status === 'Success' || queryData.file_id) {
+        if (status === 'Success') {
           isComplete = true;
           fileId = queryData.file_id;
           totalUsage = queryData.extra_info?.usage_characters || 0;
