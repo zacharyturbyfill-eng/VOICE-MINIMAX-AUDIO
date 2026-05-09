@@ -376,72 +376,75 @@ export default function Dashboard() {
     setSingleUsage(0);
     
     try {
-      const maxChunkLength = 500;
-      let rawChunks = singleText.split('\n');
-      let textChunks: string[] = [];
+      // 1. Create Async Task
+      const createRes = await fetch('/api/tts-async', {
+        method: 'POST',
+        headers: minimaxHeaders(),
+        body: JSON.stringify({
+          model: selectedModel,
+          text: singleText,
+          voice_setting: { voice_id: singleVoice, speed: speed, vol: 1, pitch: 0, emotion: selectedEmotion },
+          audio_setting: { format: 'mp3' }
+        })
+      });
       
-      for (const line of rawChunks) {
-        if (!line.trim()) continue;
-        if (line.length <= maxChunkLength) {
-          textChunks.push(line.trim());
-        } else {
-          // Tách theo dấu câu nếu quá dài
-          const sentences = line.match(/[^.!?]+[.!?]+/g) || [line];
-          let currentChunk = '';
-          for (const sentence of sentences) {
-            if ((currentChunk + sentence).length <= maxChunkLength) {
-              currentChunk += sentence + ' ';
-            } else {
-              if (currentChunk.trim()) textChunks.push(currentChunk.trim());
-              currentChunk = sentence + ' ';
-            }
-          }
-          if (currentChunk.trim()) textChunks.push(currentChunk.trim());
-        }
+      const createData = await createRes.json();
+      if (createData.base_resp?.status_code !== 0) {
+        throw new Error(createData.base_resp?.status_msg || createData.error || 'Failed to create async task');
       }
-
-      if (textChunks.length === 0) return;
-
-      const audioBlobs: Blob[] = [];
-      let totalUsage = 0;
       
-      for (let i = 0; i < textChunks.length; i++) {
-        const chunk = textChunks[i];
-        const res = await fetch('/api/tts', {
-          method: 'POST',
-          headers: minimaxHeaders(),
-          body: JSON.stringify({
-            model: selectedModel,
-            text: chunk,
-            voice_setting: { voice_id: singleVoice, speed: speed, vol: 1, pitch: 0, emotion: selectedEmotion },
-            audio_setting: { format: 'mp3' }
-          })
+      const taskId = createData.task_id;
+      if (!taskId) throw new Error('No task_id returned');
+
+      // 2. Poll for Status
+      let isComplete = false;
+      let fileId = null;
+      let totalUsage = 0;
+
+      while (!isComplete) {
+        await new Promise(r => setTimeout(r, 5000)); // Wait 5 seconds
+        
+        const queryRes = await fetch(`/api/tts-async?action=query&task_id=${taskId}`, {
+          method: 'GET',
+          headers: minimaxHeaders(false) // Send headers without content-type body
         });
         
-        const data = await res.json();
-        if (data.base_resp?.status_code !== 0) {
-          throw new Error(`Lỗi đoạn ${i + 1}/${textChunks.length}: ` + (data.base_resp?.status_msg || data.error || 'TTS failed'));
+        const queryData = await queryRes.json();
+        
+        if (queryData.base_resp?.status_code !== 0) {
+          throw new Error(queryData.base_resp?.status_msg || 'Query failed');
         }
-        
-        const url = toAudioUrl(data.data?.audio);
-        if (!url) throw new Error(`Lỗi đoạn ${i + 1}/${textChunks.length}: Invalid audio payload`);
-        
-        const audioRes = await fetch(url);
-        audioBlobs.push(await audioRes.blob());
-        totalUsage += data.extra_info?.usage_characters || 0;
-        
-        if (i < textChunks.length - 1) {
-          await new Promise(r => setTimeout(r, 400)); // Tránh TPM
+
+        const status = queryData.status; // Typically "Processing", "Success", "Failed"
+        if (status === 'Failed') {
+          throw new Error('Task generation failed on server');
+        }
+
+        if (status === 'Success' || queryData.file_id) {
+          isComplete = true;
+          fileId = queryData.file_id;
+          totalUsage = queryData.extra_info?.usage_characters || 0;
         }
       }
+
+      if (!fileId) throw new Error('No file_id returned after completion');
+
+      // 3. Download the audio file
+      const downloadRes = await fetch(`/api/tts-async?action=download&file_id=${fileId}`, {
+        method: 'GET',
+        headers: minimaxHeaders(false)
+      });
+
+      if (!downloadRes.ok) throw new Error('Failed to download audio file');
+
+      const blob = await downloadRes.blob();
+      const url = URL.createObjectURL(blob);
       
-      if (audioBlobs.length === 0) throw new Error("Không tạo được đoạn âm thanh nào.");
-      
-      const mergedBlob = new Blob(audioBlobs, { type: 'audio/mpeg' });
-      setSingleAudioUrl(URL.createObjectURL(mergedBlob));
+      setSingleAudioUrl(url);
       setSingleUsage(totalUsage);
+
     } catch (err: any) {
-      alert(err.message);
+      alert('Lỗi: ' + err.message);
     } finally {
       setIsSingleGenerating(false);
     }
