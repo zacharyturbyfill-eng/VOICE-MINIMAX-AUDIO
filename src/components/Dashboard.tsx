@@ -376,29 +376,72 @@ export default function Dashboard() {
     setSingleUsage(0);
     
     try {
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: minimaxHeaders(),
-        body: JSON.stringify({
-          model: selectedModel,
-          text: singleText,
-          voice_setting: { voice_id: singleVoice, speed: speed, vol: 1, pitch: 0, emotion: selectedEmotion },
-          audio_setting: { format: 'mp3' }
-        })
-      });
+      const maxChunkLength = 500;
+      let rawChunks = singleText.split('\n');
+      let textChunks: string[] = [];
       
-      const data = await res.json();
-      if (data.base_resp?.status_code !== 0) {
-        throw new Error(data.base_resp?.status_msg || data.error || 'TTS failed');
+      for (const line of rawChunks) {
+        if (!line.trim()) continue;
+        if (line.length <= maxChunkLength) {
+          textChunks.push(line.trim());
+        } else {
+          // Tách theo dấu câu nếu quá dài
+          const sentences = line.match(/[^.!?]+[.!?]+/g) || [line];
+          let currentChunk = '';
+          for (const sentence of sentences) {
+            if ((currentChunk + sentence).length <= maxChunkLength) {
+              currentChunk += sentence + ' ';
+            } else {
+              if (currentChunk.trim()) textChunks.push(currentChunk.trim());
+              currentChunk = sentence + ' ';
+            }
+          }
+          if (currentChunk.trim()) textChunks.push(currentChunk.trim());
+        }
+      }
+
+      if (textChunks.length === 0) return;
+
+      const audioBlobs: Blob[] = [];
+      let totalUsage = 0;
+      
+      for (let i = 0; i < textChunks.length; i++) {
+        const chunk = textChunks[i];
+        const res = await fetch('/api/tts', {
+          method: 'POST',
+          headers: minimaxHeaders(),
+          body: JSON.stringify({
+            model: selectedModel,
+            text: chunk,
+            voice_setting: { voice_id: singleVoice, speed: speed, vol: 1, pitch: 0, emotion: selectedEmotion },
+            audio_setting: { format: 'mp3' }
+          })
+        });
+        
+        const data = await res.json();
+        if (data.base_resp?.status_code !== 0) {
+          throw new Error(`Lỗi đoạn ${i + 1}/${textChunks.length}: ` + (data.base_resp?.status_msg || data.error || 'TTS failed'));
+        }
+        
+        const url = toAudioUrl(data.data?.audio);
+        if (!url) throw new Error(`Lỗi đoạn ${i + 1}/${textChunks.length}: Invalid audio payload`);
+        
+        const audioRes = await fetch(url);
+        audioBlobs.push(await audioRes.blob());
+        totalUsage += data.extra_info?.usage_characters || 0;
+        
+        if (i < textChunks.length - 1) {
+          await new Promise(r => setTimeout(r, 400)); // Tránh TPM
+        }
       }
       
-      const url = toAudioUrl(data.data?.audio);
-      if (!url) throw new Error('Invalid audio payload');
+      if (audioBlobs.length === 0) throw new Error("Không tạo được đoạn âm thanh nào.");
       
-      setSingleAudioUrl(url);
-      setSingleUsage(data.extra_info?.usage_characters || 0);
+      const mergedBlob = new Blob(audioBlobs, { type: 'audio/mpeg' });
+      setSingleAudioUrl(URL.createObjectURL(mergedBlob));
+      setSingleUsage(totalUsage);
     } catch (err: any) {
-      alert('Lỗi: ' + err.message);
+      alert(err.message);
     } finally {
       setIsSingleGenerating(false);
     }
