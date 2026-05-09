@@ -64,7 +64,6 @@ export async function GET(req: NextRequest) {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
-          'x-group-id': groupId,
         },
       });
       
