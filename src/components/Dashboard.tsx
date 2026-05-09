@@ -138,6 +138,13 @@ export default function Dashboard() {
   const sequenceAudioRef = React.useRef<HTMLAudioElement | null>(null);
   const selectedCredential = credentials.find((item) => item.id === selectedCredentialId);
 
+  // Single Voice State
+  const [singleText, setSingleText] = useState('Chưa bao giờ việc tạo ra một file âm thanh dài lại dễ dàng đến thế này. Chỉ với một cú click, tôi có thể biến một bài viết hàng nghìn chữ thành một podcast chuyên nghiệp. AI đang thay đổi cách chúng ta làm việc mỗi ngày.');
+  const [singleVoice, setSingleVoice] = useState('');
+  const [isSingleGenerating, setIsSingleGenerating] = useState(false);
+  const [singleAudioUrl, setSingleAudioUrl] = useState<string | null>(null);
+  const [singleUsage, setSingleUsage] = useState<number>(0);
+
   const minimaxHeaders = (includeJson = true) => {
     const headers: Record<string, string> = {};
     if (includeJson) headers['Content-Type'] = 'application/json';
@@ -357,6 +364,45 @@ export default function Dashboard() {
   };
 
   const [usageChars, setUsageChars] = useState<number | null>(null);
+
+  const handleSingleGenerate = async () => {
+    if (!singleText.trim() || !singleVoice) {
+      alert('Vui lòng nhập văn bản và chọn giọng đọc.');
+      return;
+    }
+    
+    setIsSingleGenerating(true);
+    setSingleAudioUrl(null);
+    setSingleUsage(0);
+    
+    try {
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: minimaxHeaders(),
+        body: JSON.stringify({
+          model: selectedModel,
+          text: singleText,
+          voice_setting: { voice_id: singleVoice, speed: speed, vol: 1, pitch: 0, emotion: selectedEmotion },
+          audio_setting: { format: 'mp3' }
+        })
+      });
+      
+      const data = await res.json();
+      if (data.base_resp?.status_code !== 0) {
+        throw new Error(data.base_resp?.status_msg || data.error || 'TTS failed');
+      }
+      
+      const url = toAudioUrl(data.data?.audio);
+      if (!url) throw new Error('Invalid audio payload');
+      
+      setSingleAudioUrl(url);
+      setSingleUsage(data.extra_info?.usage_characters || 0);
+    } catch (err: any) {
+      alert('Lỗi: ' + err.message);
+    } finally {
+      setIsSingleGenerating(false);
+    }
+  };
 
   const handleGenerate = async () => {
     if (!script.trim()) return;
@@ -709,6 +755,12 @@ export default function Dashboard() {
             onClick={() => setActiveTab('editor')}
           />
           <SidebarItem 
+            icon={<FileAudio className="w-5 h-5" />} 
+            label="Long Text (Single)" 
+            active={activeTab === 'single'} 
+            onClick={() => setActiveTab('single')}
+          />
+          <SidebarItem 
             icon={<Mic2 className="w-5 h-5" />} 
             label="Voice Cloning" 
             active={activeTab === 'cloning'} 
@@ -812,7 +864,7 @@ export default function Dashboard() {
         <header className="h-20 border-b border-white/5 flex items-center justify-between px-10 bg-[#0a0a0a]/50 backdrop-blur-xl z-10">
           <div className="flex items-center gap-6">
             <h2 className="font-bold text-2xl tracking-tight text-white">
-              {activeTab === 'editor' ? 'TTS Studio' : activeTab === 'cloning' ? 'Professional Voice Cloning' : 'Media Library'}
+              {activeTab === 'editor' ? 'TTS Studio' : activeTab === 'cloning' ? 'Professional Voice Cloning' : activeTab === 'single' ? 'Long Text (Single Voice)' : 'Media Library'}
             </h2>
             <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -1353,6 +1405,108 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
+            </motion.div>
+          ) : activeTab === 'single' ? (
+            <motion.div 
+              key="single"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              className="flex-1 overflow-auto p-10 flex flex-col lg:flex-row gap-10"
+            >
+              <section className="flex-1 flex flex-col gap-8">
+                <div className="flex-1 bg-[#151515] rounded-[3rem] p-10 shadow-inner border border-white/5 relative group overflow-hidden min-h-[500px]">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary via-blue-500 to-primary opacity-0 group-focus-within:opacity-100 transition-opacity" />
+                  <textarea
+                    value={singleText}
+                    onChange={(e) => setSingleText(e.target.value)}
+                    placeholder="Nhập nội dung văn bản dài..."
+                    className="w-full h-full bg-transparent resize-none outline-none text-lg text-white font-medium leading-relaxed custom-scrollbar placeholder:text-white/20 pb-24"
+                    spellCheck="false"
+                  />
+                  
+                  <div className="absolute bottom-10 left-10 right-10 flex justify-between items-end pointer-events-none">
+                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground bg-[#151515]/80 py-2 px-4 rounded-xl pointer-events-auto border border-white/5">
+                       {singleText.length} characters
+                     </p>
+                     
+                     <button 
+                       onClick={handleSingleGenerate}
+                       disabled={isSingleGenerating || !singleText.trim() || !singleVoice}
+                       className="pointer-events-auto flex items-center gap-3 px-8 py-5 rounded-[2rem] bg-gradient-to-r from-primary to-blue-600 text-white font-black uppercase tracking-[0.2em] shadow-2xl shadow-primary/40 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
+                     >
+                       {isSingleGenerating ? (
+                         <>
+                           <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                           Generating...
+                         </>
+                       ) : (
+                         <>
+                           <Sparkles className="w-5 h-5" /> Generate Audio
+                         </>
+                       )}
+                     </button>
+                  </div>
+                </div>
+
+                {singleAudioUrl && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-6 bg-gradient-to-r from-primary/20 to-blue-600/20 border border-primary/30 rounded-[2.5rem] flex items-center gap-6"
+                  >
+                    <button 
+                      onClick={() => {
+                        const audio = new Audio(singleAudioUrl);
+                        audio.play();
+                      }}
+                      className="w-14 h-14 rounded-full bg-primary flex items-center justify-center text-white shadow-xl shadow-primary/30 hover:scale-110 active:scale-95 transition-all"
+                    >
+                      <Play className="w-6 h-6 fill-current ml-1" />
+                    </button>
+                    <div className="flex-1">
+                       <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary mb-1">Generated Result</p>
+                       <p className="text-sm font-medium text-white/70">
+                         {singleUsage > 0 ? `Token used: ${singleUsage}` : 'Ready'}
+                       </p>
+                    </div>
+                    <button 
+                       onClick={() => {
+                         const a = document.createElement('a');
+                         a.href = singleAudioUrl;
+                         a.download = `long_text_${Date.now()}.mp3`;
+                         a.click();
+                       }}
+                       className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-white/5 hover:bg-white/10 text-[10px] font-bold text-white uppercase tracking-widest border border-white/10 transition-all"
+                    >
+                       <Download className="w-4 h-4" /> Download
+                    </button>
+                  </motion.div>
+                )}
+              </section>
+
+              <aside className="w-full lg:w-96 flex flex-col gap-8">
+                <div className="bg-[#151515] rounded-[3rem] p-8 border border-white/5 space-y-8">
+                   <h3 className="text-xs font-black uppercase tracking-[0.2em] text-primary flex items-center gap-2">
+                     <Settings className="w-4 h-4" /> Voice Settings
+                   </h3>
+                   <div className="space-y-4">
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Select Voice</label>
+                      <select 
+                        value={singleVoice}
+                        onChange={(e) => setSingleVoice(e.target.value)}
+                        className="w-full bg-black/40 border border-white/10 rounded-2xl px-5 py-4 text-white font-medium text-sm outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                      >
+                        <option value="">Select a voice...</option>
+                        {voices.map(v => (
+                          <option key={v.voice_id} value={v.voice_id}>
+                            {v.voice_name || v.voice_id} {v.is_cloned ? '(Clone)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                   </div>
+                </div>
+              </aside>
             </motion.div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-6">
