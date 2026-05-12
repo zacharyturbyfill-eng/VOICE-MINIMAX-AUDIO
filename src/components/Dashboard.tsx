@@ -528,11 +528,6 @@ export default function Dashboard() {
           results[i] = errorResult;
           setGeneratedChunks(prev => prev.map(c => c.id === i ? errorResult : c));
         }
-
-        // Delay giữa mỗi câu để tránh TPM rate limit
-        if (i < lines.length - 1) {
-          await new Promise(r => setTimeout(r, 700));
-        }
       }
 
       setUsageChars(totalUsage);
