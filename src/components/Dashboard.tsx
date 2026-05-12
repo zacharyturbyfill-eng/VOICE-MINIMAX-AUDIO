@@ -464,93 +464,103 @@ export default function Dashboard() {
     setIsPlaying(true);
     setIsSequencePlaying(true);
     setUsageChars(null);
-    setGeneratedChunks([]); // Reset
     
     try {
       const lines = parseScript(script);
-      
-      // Khởi tạo chunks nếu chưa có hoặc số lượng thay đổi
-      if (generatedChunks.length !== lines.length) {
-        setGeneratedChunks(lines.map((l, i) => ({ ...l, id: i, status: 'generating' })));
-      } else {
-        // Cập nhật text cho các chunks hiện có nếu cần
-        setGeneratedChunks(prev => prev.map((c, i) => ({ ...c, text: lines[i].text, speaker: lines[i].speaker })));
-      }
 
-      const currentChunks = generatedChunks.length === lines.length ? generatedChunks : lines.map((l, i) => ({ ...l, id: i, status: 'generating' }));
-      const results = [...currentChunks];
-      let totalUsage = usageChars || 0;
-      const BATCH_SIZE = 5;
+      // Khởi tạo chunks với status generating cho tất cả
+      const initialChunks = lines.map((l, i) => ({ ...l, id: i, status: 'generating' as const }));
+      setGeneratedChunks(initialChunks);
 
-      for (let i = 0; i < lines.length; i += BATCH_SIZE) {
-        const batch = lines.slice(i, i + BATCH_SIZE);
-        const batchPromises = batch.map(async (line, index) => {
-          const globalIndex = i + index;
-          
-          // NẾU CÂU NÀY ĐÃ CÓ AUDIO RỒI THÌ BỎ QUA ĐỂ TIẾT KIỆM QUOTA
-          if (currentChunks[globalIndex]?.status === 'ready' && currentChunks[globalIndex]?.audio) {
-            return currentChunks[globalIndex];
-          }
+      const results: any[] = [...initialChunks];
+      let totalUsage = 0;
 
-          const voiceId = roleMap[line.speaker] || selectedVoice;
-          setGeneratedChunks(prev => prev.map(c => c.id === globalIndex ? { ...c, status: 'generating' } : c));
-          
-          try {
-            const res = await fetch('/api/tts', {
-              method: 'POST',
-              headers: minimaxHeaders(),
-              body: JSON.stringify({
-                model: selectedModel,
-                text: line.text,
-                voice_setting: { voice_id: voiceId, speed: speed, vol: 1, pitch: 0, emotion: selectedEmotion },
-                audio_setting: { format: 'mp3' }
-              })
-            });
-            
-            const data = await res.json();
-            if (data.base_resp?.status_code !== 0) {
-              const errorMsg = data.base_resp?.status_msg || data.error || 'TTS failed';
-              const errorResult = { ...currentChunks[globalIndex], id: globalIndex, status: 'error' as const, error: errorMsg };
-              setGeneratedChunks(prev => prev.map(c => c.id === globalIndex ? errorResult : c));
-              return errorResult;
-            }
-            
+      // Xử lý tuần tự từng câu, 1 câu xong mới gửi câu tiếp
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+
+        // Nếu câu này đã có audio sẵn thì bỏ qua
+        const existingChunk = generatedChunks.find(c => c.id === i);
+        if (existingChunk?.status === 'ready' && existingChunk?.audio) {
+          results[i] = existingChunk;
+          continue;
+        }
+
+        const voiceId = roleMap[line.speaker] || selectedVoice;
+        setGeneratedChunks(prev => prev.map(c => c.id === i ? { ...c, status: 'generating' } : c));
+
+        try {
+          const res = await fetch('/api/tts', {
+            method: 'POST',
+            headers: minimaxHeaders(),
+            body: JSON.stringify({
+              model: selectedModel,
+              text: line.text,
+              voice_setting: { voice_id: voiceId, speed: speed, vol: 1, pitch: 0, emotion: selectedEmotion },
+              audio_setting: { format: 'mp3' }
+            })
+          });
+
+          const data = await res.json();
+          if (data.base_resp?.status_code !== 0) {
+            const errorMsg = data.base_resp?.status_msg || data.error || 'TTS failed';
+            const errorResult = { ...line, id: i, status: 'error' as const, error: errorMsg };
+            results[i] = errorResult;
+            setGeneratedChunks(prev => prev.map(c => c.id === i ? errorResult : c));
+          } else {
             const url = toAudioUrl(data.data?.audio);
             if (!url) throw new Error('Invalid audio payload');
-            
-            const result = { 
-              id: globalIndex, 
-              speaker: line.speaker, 
-              text: line.text, 
-              audio: url, 
-              usage: data.extra_info?.usage_characters, 
-              status: 'ready' as const 
+
+            const result = {
+              id: i,
+              speaker: line.speaker,
+              text: line.text,
+              audio: url,
+              usage: data.extra_info?.usage_characters,
+              status: 'ready' as const
             };
-            
-            setGeneratedChunks(prev => prev.map(c => c.id === globalIndex ? result : c));
+            results[i] = result;
+            setGeneratedChunks(prev => prev.map(c => c.id === i ? result : c));
             totalUsage += result.usage || 0;
-            return result;
-          } catch (err: any) {
-            const errorResult = { ...currentChunks[globalIndex], id: globalIndex, status: 'error' as const, error: err.message };
-            setGeneratedChunks(prev => prev.map(c => c.id === globalIndex ? errorResult : c));
-            return errorResult;
           }
-        });
+        } catch (err: any) {
+          const errorResult = { ...line, id: i, status: 'error' as const, error: err.message };
+          results[i] = errorResult;
+          setGeneratedChunks(prev => prev.map(c => c.id === i ? errorResult : c));
+        }
 
-        const batchResults = await Promise.all(batchPromises);
-        // Cập nhật kết quả vào mảng tổng
-        batchResults.forEach((r, idx) => {
-          results[i + idx] = r;
-        });
-
-        // Nghỉ rất ngắn giữa các batch nếu còn dữ liệu
-        if (i + BATCH_SIZE < lines.length) {
-          await new Promise(r => setTimeout(r, 200));
+        // Delay giữa mỗi câu để tránh TPM rate limit
+        if (i < lines.length - 1) {
+          await new Promise(r => setTimeout(r, 700));
         }
       }
 
       setUsageChars(totalUsage);
-      handleMergePreview();
+
+      // Chỉ merge khi tất cả chunk đều thành công
+      const readyChunks = results.filter(r => r.status === 'ready' && r.audio);
+      if (readyChunks.length === results.length) {
+        const blobs = await Promise.all(
+          readyChunks.map(async (c) => {
+            const res = await fetch(c.audio);
+            return await res.blob();
+          })
+        );
+        const mergedBlob = new Blob(blobs, { type: 'audio/mpeg' });
+        setMergedAudioUrl(URL.createObjectURL(mergedBlob));
+      } else if (readyChunks.length > 0) {
+        // Một số câu lỗi - cảnh báo và merge những cái có sẵn
+        const failedCount = results.length - readyChunks.length;
+        alert(`${failedCount} câu bị lỗi. Đã gộp ${readyChunks.length}/${results.length} câu thành công. Hãy dùng nút Retry để thử lại các câu bị lỗi.`);
+        const blobs = await Promise.all(
+          readyChunks.map(async (c) => {
+            const res = await fetch(c.audio);
+            return await res.blob();
+          })
+        );
+        const mergedBlob = new Blob(blobs, { type: 'audio/mpeg' });
+        setMergedAudioUrl(URL.createObjectURL(mergedBlob));
+      }
     } catch (err: any) {
       alert(err.message);
     } finally {
